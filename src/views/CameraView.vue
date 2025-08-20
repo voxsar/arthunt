@@ -44,8 +44,9 @@
 			<div class="grid-overlay">
 				<div v-for="(cell, index) in gridCells" :key="index" class="grid-cell"
 					:class="{ filled: cell.filled, active: cell.active }">
-					<div v-if="cell.filled" class="shape-icon">
-						{{ cell.shape }}
+					<div v-if="cell.filled" class="shape-content">
+						<img :src="cell.overlayImage" alt="detected shape" class="overlay-image" />
+						<span class="shape-name">{{ cell.shapeName }}</span>
 					</div>
 				</div>
 			</div>
@@ -110,6 +111,8 @@ const gridCells = ref(Array.from({ length: 6 }, (_, index) => ({
 	filled: false,
 	active: false,
 	shape: '',
+	overlayImage: '',
+	shapeName: '',
 	id: index
 })))
 
@@ -250,6 +253,8 @@ const handleShapeDetection = (shapeName: string) => {
 				// Fill the grid cell
 				gridCells.value[randomPosition].filled = true
 				gridCells.value[randomPosition].shape = getShapeEmoji(shapeName)
+				gridCells.value[randomPosition].overlayImage = getOverlayImage(randomPosition + 1)
+				gridCells.value[randomPosition].shapeName = shapeName
 				gridCells.value[randomPosition].active = true
 
 				// Remove active class after animation
@@ -281,6 +286,11 @@ const getShapeEmoji = (shapeName: string): string => {
 	return emojiMap[shapeName.toLowerCase()] || emojiMap.default
 }
 
+const getOverlayImage = (cellNumber: number): string => {
+	const paddedNumber = cellNumber.toString().padStart(2, '0')
+	return `/images/overlay_${paddedNumber}.png`
+}
+
 const formatTime = (ms: number): string => {
 	const seconds = Math.floor(ms / 1000)
 	const minutes = Math.floor(seconds / 60)
@@ -295,6 +305,8 @@ const resetGame = () => {
 		cell.filled = false
 		cell.active = false
 		cell.shape = ''
+		cell.overlayImage = ''
+		cell.shapeName = ''
 	})
 	gameCompleted.value = false
 	startTime.value = Date.now()
@@ -473,9 +485,37 @@ const toggleScreenFlip = () => {
 	background: rgba(255, 215, 0, 0.3);
 }
 
-.shape-icon {
-	font-size: 2rem;
-	filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5));
+.shape-content {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.overlay-image {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	opacity: 0.7;
+	border-radius: 4px;
+}
+
+.shape-name {
+	position: absolute;
+	bottom: 2px;
+	left: 50%;
+	transform: translateX(-50%);
+	font-size: 8px;
+	color: white;
+	background: rgba(0, 0, 0, 0.7);
+	padding: 1px 3px;
+	border-radius: 2px;
+	text-transform: uppercase;
+	font-weight: bold;
+	letter-spacing: 0.5px;
 }
 
 .detection-info {
@@ -649,8 +689,9 @@ const toggleScreenFlip = () => {
 		padding: 70px 5px 5px;
 	}
 
-	.shape-icon {
-		font-size: 1.5rem;
+	.shape-name {
+		font-size: 6px;
+		padding: 0.5px 2px;
 	}
 
 	.camera-container {
