@@ -179,7 +179,7 @@ const initializeCamera = async () => {
 		}
 
 		webcam = new tmImage.Webcam(640, 480, false) // no auto-flip
-		await webcam.setup(constraints)
+		await webcam.setup({ facingMode: "environment" })
 		await webcam.play()
 
 		if (webcamContainer.value) {
