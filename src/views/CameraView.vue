@@ -131,6 +131,8 @@ onMounted(async () => {
 	userPhone.value = user.phone
 
 	// Initialize camera and model
+	await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+	await getCameras()
 	await initializeCamera()
 })
 
