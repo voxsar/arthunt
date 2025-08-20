@@ -99,7 +99,8 @@ let model: tmImage.CustomMobileNet
 let webcam: tmImage.Webcam
 let isModelLoaded = ref(false)
 let currentDetection = ref<{ className: string; probability: number } | null>(null)
-
+let videoDevices: MediaDeviceInfo[] = []
+let currentDeviceIndex = 0
 // Camera refs
 const cameraView = ref<HTMLElement>()
 const webcamContainer = ref<HTMLElement>()
@@ -139,42 +140,57 @@ onUnmounted(() => {
 	}
 })
 
+const getCameras = async () => {
+	const devices = await navigator.mediaDevices.enumerateDevices()
+	videoDevices = devices.filter(d => d.kind === "videoinput")
+
+	// Prefer back camera as default if available
+	const backIndex = videoDevices.findIndex(d =>
+		d.label.toLowerCase().includes("back") ||
+		d.label.toLowerCase().includes("environment")
+	)
+
+	currentDeviceIndex = backIndex >= 0 ? backIndex : 0
+}
+
 const initializeCamera = async () => {
 	try {
-		// Load model if not loaded
 		if (!model) {
-			const modelURL = MODEL_URL + 'model.json'
-			const metadataURL = MODEL_URL + 'metadata.json'
+			const modelURL = MODEL_URL + "model.json"
+			const metadataURL = MODEL_URL + "metadata.json"
 			model = await tmImage.load(modelURL, metadataURL)
 			isModelLoaded.value = true
 		}
 
-		// Clear container
 		if (webcamContainer.value) {
-			webcamContainer.value.innerHTML = ''
+			webcamContainer.value.innerHTML = ""
 		}
 
-		// Create new webcam instance
-		const flip = useFrontCamera.value // flip only front camera
-		webcam = new tmImage.Webcam(640, 480, flip)
+		// Select correct camera by deviceId
+		const deviceId = videoDevices[currentDeviceIndex]?.deviceId
+		const constraints = {
+			video: {
+				deviceId: deviceId ? { exact: deviceId } : undefined,
+				width: 640,
+				height: 480
+			}
+		}
 
-		await webcam.setup({
-			video: { facingMode: useFrontCamera.value ? 'user' : 'environment' }
-		})
+		webcam = new tmImage.Webcam(640, 480, false) // no auto-flip
+		await webcam.setup(constraints)
 		await webcam.play()
 
-		// Append webcam canvas
 		if (webcamContainer.value) {
 			webcamContainer.value.appendChild(webcam.canvas)
-			webcam.canvas.style.width = '100%'
-			webcam.canvas.style.height = '100%'
-			webcam.canvas.style.objectFit = 'cover'
+			webcam.canvas.style.width = "100%"
+			webcam.canvas.style.height = "100%"
+			webcam.canvas.style.objectFit = "cover"
 		}
 
 		requestAnimationFrame(loop)
-	} catch (error) {
-		console.error('Error initializing camera:', error)
-		alert('Error loading camera. Please check permissions or try another device.')
+	} catch (err) {
+		console.error("Error initializing camera:", err)
+		alert("Error accessing camera. Please check permissions or try another device.")
 	}
 }
 
@@ -290,28 +306,24 @@ const goHome = () => {
 }
 
 // Camera control functions
+
+
 const flipCamera = async () => {
 	try {
-		// Stop and clear old webcam
 		if (webcam) {
 			webcam.stop()
-			if (webcam.canvas && webcam.canvas.parentNode) {
+			if (webcam.canvas?.parentNode) {
 				webcam.canvas.parentNode.removeChild(webcam.canvas)
 			}
-			webcam = null as any
 		}
 
-		// Toggle front/back
-		useFrontCamera.value = !useFrontCamera.value
-
-		// Reinitialize with new camera
+		// Switch to next available camera
+		currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length
 		await initializeCamera()
-	} catch (error) {
-		console.error('Error flipping camera:', error)
-		alert('Unable to switch camera. Your device may not have multiple cameras.')
+	} catch (err) {
+		console.error("Error flipping camera:", err)
 	}
 }
-
 
 const toggleScreenFlip = () => {
 	isScreenFlipped.value = !isScreenFlipped.value
