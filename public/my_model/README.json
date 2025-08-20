@@ -1,0 +1,5 @@
+{
+  "note": "This is a placeholder file. Replace this directory with your actual Teachable Machine model files:",
+  "required_files": ["model.json", "metadata.json", "weights.bin (or similar weight files)"],
+  "instructions": "See MODEL_SETUP.md for detailed setup instructions"
+}

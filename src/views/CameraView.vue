@@ -1,0 +1,468 @@
+<template>
+	<div class="camera-container">
+		<!-- Header with user info and progress -->
+		<div class="header">
+			<div class="user-info">
+				<h2>{{ userName }}</h2>
+				<span class="phone">{{ userPhone }}</span>
+			</div>
+			<div class="progress">
+				{{ detectedShapes.size }}/6 Found
+			</div>
+		</div>
+
+		<!-- Camera view with grid overlay -->
+		<div class="camera-view" ref="cameraView">
+			<div id="webcam-container" ref="webcamContainer"></div>
+
+			<!-- 6-grid overlay -->
+			<div class="grid-overlay">
+				<div v-for="(cell, index) in gridCells" :key="index" class="grid-cell"
+					:class="{ filled: cell.filled, active: cell.active }">
+					<div v-if="cell.filled" class="shape-icon">
+						{{ cell.shape }}
+					</div>
+				</div>
+			</div>
+
+			<!-- Detection feedback -->
+			<div class="detection-info">
+				<div v-if="currentDetection" class="current-detection">
+					<span class="detection-label">{{ currentDetection.className }}</span>
+					<span class="confidence">{{ (currentDetection.probability * 100).toFixed(1) }}%</span>
+				</div>
+			</div>
+		</div>
+
+		<!-- Success modal -->
+		<div v-if="gameCompleted" class="success-modal">
+			<div class="modal-content">
+				<h2>🎉 Congratulations!</h2>
+				<p>You've found all 6 shapes!</p>
+				<p>Hunt completed in {{ formatTime(completionTime) }}</p>
+				<button @click="resetGame" class="reset-btn">Play Again</button>
+				<button @click="goHome" class="home-btn">Go Home</button>
+			</div>
+		</div>
+	</div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import * as tmImage from '@teachablemachine/image'
+
+const router = useRouter()
+
+// User data
+const userName = ref('')
+const userPhone = ref('')
+
+// Game state
+const detectedShapes = ref(new Set<string>())
+const gameCompleted = ref(false)
+const startTime = ref(Date.now())
+const completionTime = ref(0)
+
+// TensorFlow.js variables
+let model: tmImage.CustomMobileNet
+let webcam: tmImage.Webcam
+let isModelLoaded = ref(false)
+let currentDetection = ref<{ className: string; probability: number } | null>(null)
+
+// Camera refs
+const cameraView = ref<HTMLElement>()
+const webcamContainer = ref<HTMLElement>()
+
+// Grid system (3x2 grid = 6 cells)
+const gridCells = ref(Array.from({ length: 6 }, (_, index) => ({
+	filled: false,
+	active: false,
+	shape: '',
+	id: index
+})))
+
+// Assign random positions for each user
+const shapePositions = ref(new Map<string, number>())
+
+const MODEL_URL = '/my_model/'
+
+onMounted(async () => {
+	// Get user data
+	const userData = localStorage.getItem('scavhunt_user')
+	if (!userData) {
+		router.push('/')
+		return
+	}
+
+	const user = JSON.parse(userData)
+	userName.value = user.name
+	userPhone.value = user.phone
+
+	// Initialize camera and model
+	await initializeCamera()
+})
+
+onUnmounted(() => {
+	if (webcam) {
+		webcam.stop()
+	}
+})
+
+const initializeCamera = async () => {
+	try {
+		// Load the model
+		const modelURL = MODEL_URL + 'model.json'
+		const metadataURL = MODEL_URL + 'metadata.json'
+
+		model = await tmImage.load(modelURL, metadataURL)
+		isModelLoaded.value = true
+
+		// Setup webcam
+		const flip = true
+		webcam = new tmImage.Webcam(window.innerWidth, window.innerHeight, flip)
+		await webcam.setup()
+		await webcam.play()
+
+		// Append webcam to container
+		if (webcamContainer.value) {
+			webcamContainer.value.appendChild(webcam.canvas)
+			webcam.canvas.style.width = '100%'
+			webcam.canvas.style.height = '100%'
+			webcam.canvas.style.objectFit = 'cover'
+		}
+
+		// Start prediction loop
+		requestAnimationFrame(loop)
+
+	} catch (error) {
+		console.error('Error initializing camera:', error)
+		alert('Error loading camera or model. Please ensure your model files are in /public/my_model/')
+	}
+}
+
+const loop = async () => {
+	if (webcam && model && !gameCompleted.value) {
+		webcam.update()
+		await predict()
+		requestAnimationFrame(loop)
+	}
+}
+
+const predict = async () => {
+	if (!model || !webcam) return
+
+	try {
+		const predictions = await model.predict(webcam.canvas)
+
+		// Find the highest confidence prediction
+		let bestPrediction = predictions[0]
+		for (let i = 1; i < predictions.length; i++) {
+			if (predictions[i].probability > bestPrediction.probability) {
+				bestPrediction = predictions[i]
+			}
+		}
+
+		currentDetection.value = bestPrediction
+
+		// If confidence is high enough, consider it a detection
+		if (bestPrediction.probability > 0.99) {
+			handleShapeDetection(bestPrediction.className)
+		}
+	} catch (error) {
+		console.error('Prediction error:', error)
+	}
+}
+
+const handleShapeDetection = (shapeName: string) => {
+	// If this shape hasn't been detected before
+	if (!detectedShapes.value.has(shapeName)) {
+		detectedShapes.value.add(shapeName)
+
+		// Assign a random grid position if not already assigned
+		if (!shapePositions.value.has(shapeName)) {
+			const availablePositions = gridCells.value
+				.map((cell, index) => ({ cell, index }))
+				.filter(({ cell }) => !cell.filled)
+				.map(({ index }) => index)
+
+			if (availablePositions.length > 0) {
+				const randomPosition = availablePositions[Math.floor(Math.random() * availablePositions.length)]
+				shapePositions.value.set(shapeName, randomPosition)
+
+				// Fill the grid cell
+				gridCells.value[randomPosition].filled = true
+				gridCells.value[randomPosition].shape = getShapeEmoji(shapeName)
+				gridCells.value[randomPosition].active = true
+
+				// Remove active class after animation
+				setTimeout(() => {
+					gridCells.value[randomPosition].active = false
+				}, 1000)
+
+				// Check if game is completed
+				if (detectedShapes.value.size >= 6) {
+					completionTime.value = Date.now() - startTime.value
+					gameCompleted.value = true
+				}
+			}
+		}
+	}
+}
+
+const getShapeEmoji = (shapeName: string): string => {
+	const emojiMap: { [key: string]: string } = {
+		'circle': '⭕',
+		'square': '⬜',
+		'triangle': '🔺',
+		'star': '⭐',
+		'heart': '❤️',
+		'diamond': '💎',
+		'default': '🔷'
+	}
+
+	return emojiMap[shapeName.toLowerCase()] || emojiMap.default
+}
+
+const formatTime = (ms: number): string => {
+	const seconds = Math.floor(ms / 1000)
+	const minutes = Math.floor(seconds / 60)
+	const remainingSeconds = seconds % 60
+	return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+}
+
+const resetGame = () => {
+	detectedShapes.value.clear()
+	shapePositions.value.clear()
+	gridCells.value.forEach(cell => {
+		cell.filled = false
+		cell.active = false
+		cell.shape = ''
+	})
+	gameCompleted.value = false
+	startTime.value = Date.now()
+	completionTime.value = 0
+}
+
+const goHome = () => {
+	if (webcam) {
+		webcam.stop()
+	}
+	router.push('/')
+}
+</script>
+
+<style scoped>
+.camera-container {
+	position: relative;
+	width: 100vw;
+	height: 100vh;
+	overflow: hidden;
+	background: #000;
+}
+
+.header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	background: rgba(0, 0, 0, 0.7);
+	color: white;
+	padding: 10px 20px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	z-index: 10;
+}
+
+.user-info h2 {
+	margin: 0;
+	font-size: 1.2rem;
+}
+
+.phone {
+	font-size: 0.9rem;
+	opacity: 0.8;
+}
+
+.progress {
+	font-size: 1.1rem;
+	font-weight: bold;
+	color: #4CAF50;
+}
+
+.camera-view {
+	position: relative;
+	width: 100%;
+	height: 100%;
+}
+
+#webcam-container {
+	width: 100%;
+	height: 100%;
+}
+
+.grid-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	grid-template-rows: repeat(2, 1fr);
+	gap: 2px;
+	padding: 60px 10px 10px;
+	pointer-events: none;
+	z-index: 5;
+}
+
+.grid-cell {
+	border: 2px solid rgba(255, 255, 255, 0.3);
+	background: rgba(0, 0, 0, 0.1);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: all 0.3s ease;
+	border-radius: 8px;
+}
+
+.grid-cell.filled {
+	background: rgba(76, 175, 80, 0.3);
+	border-color: #4CAF50;
+}
+
+.grid-cell.active {
+	animation: pulse 1s ease-in-out;
+	border-color: #FFD700;
+	background: rgba(255, 215, 0, 0.3);
+}
+
+.shape-icon {
+	font-size: 2rem;
+	filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.detection-info {
+	position: absolute;
+	bottom: 20px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 10;
+}
+
+.current-detection {
+	background: rgba(0, 0, 0, 0.8);
+	color: white;
+	padding: 10px 20px;
+	border-radius: 25px;
+	display: flex;
+	gap: 10px;
+	align-items: center;
+}
+
+.detection-label {
+	font-weight: bold;
+}
+
+.confidence {
+	color: #4CAF50;
+	font-size: 0.9rem;
+}
+
+.success-modal {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.8);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 20;
+}
+
+.modal-content {
+	background: white;
+	padding: 40px;
+	border-radius: 16px;
+	text-align: center;
+	max-width: 400px;
+	width: 90%;
+}
+
+.modal-content h2 {
+	color: #4CAF50;
+	margin-bottom: 20px;
+}
+
+.modal-content p {
+	margin-bottom: 15px;
+	color: #333;
+}
+
+.reset-btn,
+.home-btn {
+	padding: 12px 24px;
+	margin: 5px;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	font-weight: bold;
+	transition: background-color 0.3s ease;
+}
+
+.reset-btn {
+	background: #4CAF50;
+	color: white;
+}
+
+.reset-btn:hover {
+	background: #45a049;
+}
+
+.home-btn {
+	background: #2196F3;
+	color: white;
+}
+
+.home-btn:hover {
+	background: #1976D2;
+}
+
+@keyframes pulse {
+	0% {
+		transform: scale(1);
+		box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.7);
+	}
+
+	70% {
+		transform: scale(1.05);
+		box-shadow: 0 0 0 10px rgba(255, 215, 0, 0);
+	}
+
+	100% {
+		transform: scale(1);
+		box-shadow: 0 0 0 0 rgba(255, 215, 0, 0);
+	}
+}
+
+@media (max-width: 768px) {
+	.header {
+		padding: 8px 15px;
+	}
+
+	.user-info h2 {
+		font-size: 1rem;
+	}
+
+	.grid-overlay {
+		padding: 50px 5px 5px;
+	}
+
+	.shape-icon {
+		font-size: 1.5rem;
+	}
+}
+</style>
