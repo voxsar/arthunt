@@ -257,6 +257,7 @@ const goHome = () => {
 	position: relative;
 	width: 100vw;
 	height: 100vh;
+	max-height: 100vh;
 	overflow: hidden;
 	background: #000;
 }
@@ -449,6 +450,13 @@ const goHome = () => {
 }
 
 @media (max-width: 768px) {
+	body {
+		overflow: hidden;
+		position: fixed;
+		width: 100%;
+		height: 100%;
+	}
+
 	.header {
 		padding: 8px 15px;
 	}
@@ -463,6 +471,15 @@ const goHome = () => {
 
 	.shape-icon {
 		font-size: 1.5rem;
+	}
+
+	.camera-container {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100vw;
+		height: 100vh;
+		overflow: hidden;
 	}
 }
 </style>

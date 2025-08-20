@@ -3,8 +3,44 @@
 #app {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
   font-weight: normal;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Mobile-first approach */
+@media (max-width: 1023px) {
+  #app {
+    padding: 0;
+    height: 100vh;
+    max-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Desktop */
+@media (min-width: 1024px) {
+  html {
+    position: static;
+    overflow: auto;
+  }
+
+  body {
+    display: flex;
+    place-items: center;
+    overflow: auto; /* Allow scrolling on desktop */
+    position: static;
+    max-height: none;
+  }
+
+  #app {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 0 2rem;
+    height: auto;
+    overflow: visible;
+  }
 }
 
 a,
@@ -18,18 +54,5 @@ a,
 @media (hover: hover) {
   a:hover {
     background-color: hsla(160, 100%, 37%, 0.2);
-  }
-}
-
-@media (min-width: 1024px) {
-  body {
-    display: flex;
-    place-items: center;
-  }
-
-  #app {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 0 2rem;
   }
 }

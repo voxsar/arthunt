@@ -50,6 +50,18 @@
   }
 }
 
+/* PWA and mobile optimizations */
+html {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: fixed;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 *,
 *::before,
 *::after {
@@ -60,6 +72,8 @@
 
 body {
   min-height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   color: var(--color-text);
   background: var(--color-background);
   transition:
@@ -83,4 +97,11 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Prevent pull-to-refresh and overscroll */
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  /* Prevent iOS bounce */
+  position: fixed;
+  width: 100%;
+  height: 100%;
 }

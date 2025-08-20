@@ -1,7 +1,8 @@
 <template>
 	<div class="register-container">
 		<div class="register-form">
-			<h1>Scavenger Hunt Registration</h1>
+			
+			<h1>Maliban Puzzle Hunt Registration</h1>
 			<form @submit.prevent="handleSubmit">
 				<div class="form-group">
 					<label for="name">Full Name</label>
@@ -111,8 +112,11 @@ const handlePhoneInput = () => {
 	justify-content: center;
 	align-items: center;
 	min-height: 100vh;
+	max-height: 100vh;
 	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 	padding: 20px;
+	overflow: hidden;
+	box-sizing: border-box;
 }
 
 .register-form {
@@ -193,12 +197,32 @@ input.error {
 }
 
 @media (max-width: 480px) {
+	.register-container {
+		padding: 10px;
+		align-items: flex-start;
+		padding-top: 5vh;
+	}
+
 	.register-form {
-		padding: 30px 20px;
+		padding: 20px 15px;
+		max-height: 90vh;
+		overflow-y: auto;
 	}
 
 	h1 {
 		font-size: 1.5rem;
+		margin-bottom: 20px;
+	}
+
+	input {
+		padding: 10px 12px;
+		font-size: 16px;
+		/* Prevents zoom on iOS */
+	}
+
+	.submit-btn {
+		padding: 12px;
+		font-size: 16px;
 	}
 }
 </style>
