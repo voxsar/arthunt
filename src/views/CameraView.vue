@@ -172,14 +172,15 @@ const initializeCamera = async () => {
 		const deviceId = videoDevices[currentDeviceIndex]?.deviceId
 		const constraints = {
 			video: {
-				deviceId: deviceId ? { exact: deviceId } : undefined,
+				deviceId: deviceId ? { exact: deviceId } : 'environment',
 				width: 640,
 				height: 480
-			}
+			},
+			facingMode: isScreenFlipped.value ? 'user' : 'environment'
 		}
 
 		webcam = new tmImage.Webcam(640, 480, false) // no auto-flip
-		await webcam.setup({ facingMode: "environment" })
+		await webcam.setup(constraints)
 		await webcam.play()
 
 		if (webcamContainer.value) {
