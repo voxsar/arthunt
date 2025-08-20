@@ -4,8 +4,8 @@
   "description": "A fun scavenger hunt game using AI shape detection",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#667eea",
-  "theme_color": "#667eea",
+  "background_color": "#113c66",
+  "theme_color": "#e20b1d",
   "orientation": "portrait",
   "icons": [
     {

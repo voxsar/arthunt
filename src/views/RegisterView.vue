@@ -1,7 +1,7 @@
 <template>
 	<div class="register-container">
 		<div class="register-form">
-			
+			<MalibanLogo />
 			<h1>Maliban Puzzle Hunt Registration</h1>
 			<form @submit.prevent="handleSubmit">
 				<div class="form-group">
@@ -29,6 +29,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import MalibanLogo from '../components/MalibanLogo.vue'
 
 const router = useRouter()
 
@@ -113,7 +114,7 @@ const handlePhoneInput = () => {
 	align-items: center;
 	min-height: 100vh;
 	max-height: 100vh;
-	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+	background: #113c66;
 	padding: 20px;
 	overflow: hidden;
 	box-sizing: border-box;
@@ -126,13 +127,15 @@ const handlePhoneInput = () => {
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
 	width: 100%;
 	max-width: 400px;
+	border: 3px solid #e20b1d;
 }
 
 h1 {
 	text-align: center;
-	color: #333;
+	color: #113c66;
 	margin-bottom: 30px;
 	font-size: 2rem;
+	font-weight: bold;
 }
 
 .form-group {
@@ -142,7 +145,7 @@ h1 {
 label {
 	display: block;
 	margin-bottom: 8px;
-	color: #555;
+	color: #113c66;
 	font-weight: 600;
 }
 
@@ -158,7 +161,7 @@ input {
 
 input:focus {
 	outline: none;
-	border-color: #667eea;
+	border-color: #e20b1d;
 }
 
 input.error {
@@ -175,7 +178,7 @@ input.error {
 .submit-btn {
 	width: 100%;
 	padding: 14px;
-	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+	background: #e20b1d;
 	color: white;
 	border: none;
 	border-radius: 8px;
@@ -187,7 +190,8 @@ input.error {
 
 .submit-btn:hover:not(:disabled) {
 	transform: translateY(-2px);
-	box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+	box-shadow: 0 5px 15px rgba(226, 11, 29, 0.4);
+	background: #cc0918;
 }
 
 .submit-btn:disabled {

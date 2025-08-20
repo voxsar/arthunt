@@ -1,18 +1,43 @@
 <template>
 	<div class="camera-container">
-		<!-- Header with user info and progress -->
+		<!-- Enhanced Header with logo and controls -->
 		<div class="header">
-			<div class="user-info">
-				<h2>{{ userName }}</h2>
-				<span class="phone">{{ userPhone }}</span>
+			<div class="header-left">
+				<button @click="flipCamera" class="control-btn">
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M21 2v6h-6" />
+						<path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.85 1 6.58 2.58L21 8" />
+						<path d="M3 22v-6h6" />
+						<path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.85-1-6.58-2.58L3 16" />
+					</svg>
+				</button>
+				<button @click="toggleScreenFlip" class="control-btn">
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+						<line x1="8" y1="21" x2="16" y2="21" />
+						<line x1="12" y1="17" x2="12" y2="21" />
+						<path d="M7 13l5-5 5 5" />
+					</svg>
+				</button>
 			</div>
-			<div class="progress">
-				{{ detectedShapes.size }}/6 Found
+
+			<div class="header-center">
+				<MalibanLogo class="header-logo" />
+			</div>
+
+			<div class="header-right">
+				<div class="user-info">
+					<h2>{{ userName }}</h2>
+					<span class="phone">{{ userPhone }}</span>
+				</div>
+				<div class="progress">
+					{{ detectedShapes.size }}/6 Found
+				</div>
 			</div>
 		</div>
 
 		<!-- Camera view with grid overlay -->
-		<div class="camera-view" ref="cameraView">
+		<div class="camera-view" ref="cameraView" :class="{ flipped: isScreenFlipped }">
 			<div id="webcam-container" ref="webcamContainer"></div>
 
 			<!-- 6-grid overlay -->
@@ -51,6 +76,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import * as tmImage from '@teachablemachine/image'
+import MalibanLogo from '../components/MalibanLogo.vue'
 
 const router = useRouter()
 
@@ -63,6 +89,10 @@ const detectedShapes = ref(new Set<string>())
 const gameCompleted = ref(false)
 const startTime = ref(Date.now())
 const completionTime = ref(0)
+
+// Camera controls
+const isScreenFlipped = ref(false)
+const useFrontCamera = ref(false)
 
 // TensorFlow.js variables
 let model: tmImage.CustomMobileNet
@@ -111,16 +141,38 @@ onUnmounted(() => {
 
 const initializeCamera = async () => {
 	try {
-		// Load the model
-		const modelURL = MODEL_URL + 'model.json'
-		const metadataURL = MODEL_URL + 'metadata.json'
+		// Load the model (only if not already loaded)
+		if (!model) {
+			const modelURL = MODEL_URL + 'model.json'
+			const metadataURL = MODEL_URL + 'metadata.json'
 
-		model = await tmImage.load(modelURL, metadataURL)
-		isModelLoaded.value = true
+			model = await tmImage.load(modelURL, metadataURL)
+			isModelLoaded.value = true
+		}
 
-		// Setup webcam
-		const flip = true
+		// Clear existing webcam container
+		if (webcamContainer.value) {
+			webcamContainer.value.innerHTML = ''
+		}
+
+		// Setup webcam with camera facing mode
+		const flip = !useFrontCamera.value // Front camera typically needs flipping
+
+		// Create webcam with constraints for camera selection
+		const constraints = {
+			video: {
+				facingMode: useFrontCamera.value ? 'user' : 'environment',
+				width: window.innerWidth,
+				height: window.innerHeight
+			}
+		}
+
 		webcam = new tmImage.Webcam(window.innerWidth, window.innerHeight, flip)
+
+		// Override the webcam setup to use our constraints
+		const originalSetup = webcam.setup.bind(webcam)
+		webcam.setup = () => originalSetup(constraints)
+
 		await webcam.setup()
 		await webcam.play()
 
@@ -250,6 +302,27 @@ const goHome = () => {
 	}
 	router.push('/')
 }
+
+// Camera control functions
+const flipCamera = async () => {
+	try {
+		if (webcam) {
+			webcam.stop()
+		}
+
+		useFrontCamera.value = !useFrontCamera.value
+
+		// Reinitialize camera with new facing mode
+		await initializeCamera()
+	} catch (error) {
+		console.error('Error flipping camera:', error)
+		alert('Unable to switch camera. Your device may not have multiple cameras.')
+	}
+}
+
+const toggleScreenFlip = () => {
+	isScreenFlipped.value = !isScreenFlipped.value
+}
 </script>
 
 <style scoped>
@@ -267,13 +340,58 @@ const goHome = () => {
 	top: 0;
 	left: 0;
 	right: 0;
-	background: rgba(0, 0, 0, 0.7);
+	background: rgba(17, 60, 102, 0.9);
 	color: white;
 	padding: 10px 20px;
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
 	z-index: 10;
+	backdrop-filter: blur(10px);
+}
+
+.header-left {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	flex: 1;
+}
+
+.header-center {
+	flex: 1;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+}
+
+.header-right {
+	flex: 1;
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 15px;
+}
+
+.header-logo {
+	height: 40px;
+	width: auto;
+}
+
+.control-btn {
+	background: rgba(226, 11, 29, 0.8);
+	border: none;
+	border-radius: 8px;
+	padding: 8px;
+	color: white;
+	cursor: pointer;
+	transition: background-color 0.3s ease;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.control-btn:hover {
+	background: rgba(226, 11, 29, 1);
 }
 
 .user-info h2 {
@@ -289,13 +407,21 @@ const goHome = () => {
 .progress {
 	font-size: 1.1rem;
 	font-weight: bold;
-	color: #4CAF50;
+	color: #ffd700;
+	background: rgba(226, 11, 29, 0.8);
+	padding: 5px 10px;
+	border-radius: 5px;
 }
 
 .camera-view {
 	position: relative;
 	width: 100%;
 	height: 100%;
+	transition: transform 0.3s ease;
+}
+
+.camera-view.flipped {
+	transform: scaleX(-1);
 }
 
 #webcam-container {
@@ -329,8 +455,8 @@ const goHome = () => {
 }
 
 .grid-cell.filled {
-	background: rgba(76, 175, 80, 0.3);
-	border-color: #4CAF50;
+	background: rgba(226, 11, 29, 0.3);
+	border-color: #e20b1d;
 }
 
 .grid-cell.active {
@@ -367,7 +493,7 @@ const goHome = () => {
 }
 
 .confidence {
-	color: #4CAF50;
+	color: #ffd700;
 	font-size: 0.9rem;
 }
 
@@ -394,7 +520,7 @@ const goHome = () => {
 }
 
 .modal-content h2 {
-	color: #4CAF50;
+	color: #e20b1d;
 	margin-bottom: 20px;
 }
 
@@ -415,21 +541,21 @@ const goHome = () => {
 }
 
 .reset-btn {
-	background: #4CAF50;
+	background: #e20b1d;
 	color: white;
 }
 
 .reset-btn:hover {
-	background: #45a049;
+	background: #cc0918;
 }
 
 .home-btn {
-	background: #2196F3;
+	background: #113c66;
 	color: white;
 }
 
 .home-btn:hover {
-	background: #1976D2;
+	background: #0d2f52;
 }
 
 @keyframes pulse {
@@ -458,15 +584,61 @@ const goHome = () => {
 	}
 
 	.header {
-		padding: 8px 15px;
+		padding: 8px 10px;
+		height: 60px;
+	}
+
+	.header-left,
+	.header-center,
+	.header-right {
+		flex: 1;
+	}
+
+	.header-left {
+		justify-content: flex-start;
+		gap: 5px;
+	}
+
+	.header-center {
+		justify-content: center;
+	}
+
+	.header-right {
+		justify-content: flex-end;
+		gap: 8px;
+	}
+
+	.header-logo {
+		height: 25px;
 	}
 
 	.user-info h2 {
-		font-size: 1rem;
+		font-size: 0.8rem;
+		margin: 0;
+	}
+
+	.user-info .phone {
+		font-size: 0.7rem;
+	}
+
+	.progress {
+		font-size: 0.8rem;
+		padding: 2px 6px;
+	}
+
+	.control-btn {
+		padding: 4px;
+		width: 30px;
+		height: 30px;
+	}
+
+	.control-btn svg {
+		width: 14px;
+		height: 14px;
 	}
 
 	.grid-overlay {
-		padding: 50px 5px 5px;
+		padding: 70px 5px 5px;
 	}
 
 	.shape-icon {
