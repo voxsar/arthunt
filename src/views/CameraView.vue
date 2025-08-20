@@ -141,42 +141,29 @@ onUnmounted(() => {
 
 const initializeCamera = async () => {
 	try {
-		// Load the model (only if not already loaded)
+		// Load model if not loaded
 		if (!model) {
 			const modelURL = MODEL_URL + 'model.json'
 			const metadataURL = MODEL_URL + 'metadata.json'
-
 			model = await tmImage.load(modelURL, metadataURL)
 			isModelLoaded.value = true
 		}
 
-		// Clear existing webcam container
+		// Clear container
 		if (webcamContainer.value) {
 			webcamContainer.value.innerHTML = ''
 		}
 
-		// Setup webcam with camera facing mode
-		const flip = !useFrontCamera.value // Front camera typically needs flipping
+		// Create new webcam instance
+		const flip = useFrontCamera.value // flip only front camera
+		webcam = new tmImage.Webcam(640, 480, flip)
 
-		// Create webcam with constraints for camera selection
-		const constraints = {
-			video: {
-				facingMode: useFrontCamera.value ? 'user' : 'environment',
-				width: window.innerWidth,
-				height: window.innerHeight
-			}
-		}
-
-		webcam = new tmImage.Webcam(window.innerWidth, window.innerHeight, flip)
-
-		// Override the webcam setup to use our constraints
-		const originalSetup = webcam.setup.bind(webcam)
-		webcam.setup = () => originalSetup(constraints)
-
-		await webcam.setup()
+		await webcam.setup({
+			video: { facingMode: useFrontCamera.value ? 'user' : 'environment' }
+		})
 		await webcam.play()
 
-		// Append webcam to container
+		// Append webcam canvas
 		if (webcamContainer.value) {
 			webcamContainer.value.appendChild(webcam.canvas)
 			webcam.canvas.style.width = '100%'
@@ -184,14 +171,13 @@ const initializeCamera = async () => {
 			webcam.canvas.style.objectFit = 'cover'
 		}
 
-		// Start prediction loop
 		requestAnimationFrame(loop)
-
 	} catch (error) {
 		console.error('Error initializing camera:', error)
-		alert('Error loading camera or model. Please ensure your model files are in /public/my_model/')
+		alert('Error loading camera. Please check permissions or try another device.')
 	}
 }
+
 
 const loop = async () => {
 	if (webcam && model && !gameCompleted.value) {
@@ -306,19 +292,26 @@ const goHome = () => {
 // Camera control functions
 const flipCamera = async () => {
 	try {
+		// Stop and clear old webcam
 		if (webcam) {
 			webcam.stop()
+			if (webcam.canvas && webcam.canvas.parentNode) {
+				webcam.canvas.parentNode.removeChild(webcam.canvas)
+			}
+			webcam = null as any
 		}
 
+		// Toggle front/back
 		useFrontCamera.value = !useFrontCamera.value
 
-		// Reinitialize camera with new facing mode
+		// Reinitialize with new camera
 		await initializeCamera()
 	} catch (error) {
 		console.error('Error flipping camera:', error)
 		alert('Unable to switch camera. Your device may not have multiple cameras.')
 	}
 }
+
 
 const toggleScreenFlip = () => {
 	isScreenFlipped.value = !isScreenFlipped.value
