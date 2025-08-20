@@ -223,7 +223,7 @@ const predict = async () => {
 		currentDetection.value = bestPrediction
 
 		// If confidence is high enough, consider it a detection
-		if (bestPrediction.probability > 0.99) {
+		if (bestPrediction.probability > 0.9) {
 			handleShapeDetection(bestPrediction.className)
 		}
 	} catch (error) {
