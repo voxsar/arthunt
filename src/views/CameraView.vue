@@ -113,9 +113,9 @@ const completionTime = ref(0)
 const selectedClasses = ref<string[]>([])
 const participantId = ref('')
 
-// Detection tracking for 3-second consistency
+// Detection tracking for 2-second consistency
 const detectionTracker = ref(new Map<string, { count: number, lastDetected: number }>())
-const DETECTION_THRESHOLD = 90 // 3 seconds at ~30 FPS
+const DETECTION_THRESHOLD = 60 // 2 seconds at ~30 FPS
 const CONFIDENCE_THRESHOLD = 0.7
 
 // Camera controls
@@ -388,6 +388,9 @@ const handleShapeDetection = async (shapeName: string) => {
 				gridCells.value[randomPosition].active = false
 			}, 1000)
 
+			// Ensure grid state is fully updated before sending progress
+			await new Promise(resolve => setTimeout(resolve, 10))
+
 			// Send progress update to server AFTER the grid is updated
 			await updateGameProgress(shapeName)
 
@@ -430,6 +433,7 @@ const updateGameProgress = async (detectedClassName: string) => {
 			}
 
 			console.log('Sending progress update for detection:', detectedClassName, progressData)
+			console.log('Grid state at time of sending:', progressData.gridState.filter(cell => cell.filled))
 
 			const response = await fetch('https://malibanscav.dev.artslabcreatives.com/api/games', {
 				method: 'POST',
