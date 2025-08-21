@@ -114,7 +114,8 @@ const handlePhoneInput = () => {
 	align-items: center;
 	min-height: 100vh;
 	max-height: 100vh;
-	background: #113c66;
+	background: url('/public/bg.png') no-repeat center center fixed;
+	background-size: cover;
 	padding: 20px;
 	overflow: hidden;
 	box-sizing: border-box;
