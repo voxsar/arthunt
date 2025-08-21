@@ -405,6 +405,13 @@ const updateGameProgress = async (detectedClassName: string) => {
 				latestDetection: detectedClassName,
 				currentProgress: detectedShapes.value.size,
 				gridProgress: gridCells.value.filter(cell => cell.filled).length,
+				gridState: gridCells.value.map((cell, index) => ({
+					position: index,
+					filled: cell.filled,
+					shapeName: cell.shapeName,
+					overlayImage: cell.overlayImage,
+					shape: cell.shape
+				})),
 				totalRequired: 6,
 				completed: false,
 				timestamp: Date.now(),
@@ -457,6 +464,13 @@ const completeGame = async () => {
 				startTime: startTime.value,
 				endTime: Date.now(),
 				gridProgress: gridCells.value.filter(cell => cell.filled).length,
+				gridState: gridCells.value.map((cell, index) => ({
+					position: index,
+					filled: cell.filled,
+					shapeName: cell.shapeName,
+					overlayImage: cell.overlayImage,
+					shape: cell.shape
+				})),
 				totalGridCells: 6,
 				completed: true,
 				finalCompletion: true // Flag to indicate this is the final completion
