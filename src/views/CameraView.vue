@@ -31,7 +31,7 @@
 					<span class="phone">{{ userPhone }}</span>
 				</div>
 				<div class="progress">
-					{{ detectedShapes.size }}/10 Found
+					{{ detectedShapes.size }}/6 Found
 				</div>
 			</div>
 		</div>
@@ -73,7 +73,7 @@
 			<div class="modal-content">
 				<img src="/win.jpg" alt="You Win!" class="win-image" />
 				<h2>🎉 Congratulations!</h2>
-				<p>You've found all 10 items!</p>
+				<p>You've found all 6 items!</p>
 				<p>Hunt completed in {{ formatTime(completionTime) }}</p>
 				<button @click="goHome" class="home-btn">Go Home</button>
 			</div>
@@ -121,8 +121,8 @@ let currentDeviceIndex = 0
 const cameraView = ref<HTMLElement>()
 const webcamContainer = ref<HTMLElement>()
 
-// Grid system (5x2 grid = 10 cells)
-const gridCells = ref(Array.from({ length: 10 }, (_, index) => ({
+// Grid system (3x2 grid = 6 cells)
+const gridCells = ref(Array.from({ length: 6 }, (_, index) => ({
 	filled: false,
 	active: false,
 	shape: '',
@@ -367,8 +367,8 @@ const handleShapeDetection = async (shapeName: string) => {
 				gridCells.value[randomPosition].active = false
 			}, 1000)
 
-			// Check if game is completed (found all 10 selected classes)
-			if (detectedShapes.value.size >= 10) {
+			// Check if game is completed (found all 6 grid positions)
+			if (detectedShapes.value.size >= 6) {
 				completionTime.value = Date.now() - startTime.value
 				await completeGame()
 			}
@@ -614,7 +614,7 @@ const toggleScreenFlip = () => {
 	right: 0;
 	bottom: 0;
 	display: grid;
-	grid-template-columns: repeat(5, 1fr);
+	grid-template-columns: repeat(3, 1fr);
 	grid-template-rows: repeat(2, 1fr);
 	gap: 2px;
 	padding: 60px 10px 10px;
