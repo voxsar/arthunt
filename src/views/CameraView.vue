@@ -31,7 +31,7 @@
 					<span class="phone">{{ userPhone }}</span>
 				</div>
 				<div class="progress">
-					{{ detectedShapes.size }}/6 Found
+					{{ detectedShapes.size }}/10 Found
 				</div>
 			</div>
 		</div>
@@ -56,6 +56,14 @@
 				<div v-if="currentDetection" class="current-detection">
 					<span class="detection-label">{{ currentDetection.className }}</span>
 					<span class="confidence">{{ (currentDetection.probability * 100).toFixed(1) }}%</span>
+					<div v-if="selectedClasses.includes(currentDetection.className) && detectionTracker.has(currentDetection.className)" 
+						 class="detection-progress">
+						<div class="progress-bar">
+							<div class="progress-fill" 
+								 :style="{ width: `${((detectionTracker.get(currentDetection.className)?.count || 0) / DETECTION_THRESHOLD) * 100}%` }"></div>
+						</div>
+						<span class="progress-text">Hold steady...</span>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -63,10 +71,10 @@
 		<!-- Success modal -->
 		<div v-if="gameCompleted" class="success-modal">
 			<div class="modal-content">
+				<img src="/win.jpg" alt="You Win!" class="win-image" />
 				<h2>🎉 Congratulations!</h2>
-				<p>You've found all 6 shapes!</p>
+				<p>You've found all 10 items!</p>
 				<p>Hunt completed in {{ formatTime(completionTime) }}</p>
-				<button @click="resetGame" class="reset-btn">Play Again</button>
 				<button @click="goHome" class="home-btn">Go Home</button>
 			</div>
 		</div>
@@ -90,6 +98,13 @@ const detectedShapes = ref(new Set<string>())
 const gameCompleted = ref(false)
 const startTime = ref(Date.now())
 const completionTime = ref(0)
+const selectedClasses = ref<string[]>([])
+const participantId = ref('')
+
+// Detection tracking for 3-second consistency
+const detectionTracker = ref(new Map<string, { count: number, lastDetected: number }>())
+const DETECTION_THRESHOLD = 90 // 3 seconds at ~30 FPS
+const CONFIDENCE_THRESHOLD = 0.7
 
 // Camera controls
 const isScreenFlipped = ref(false)
@@ -106,8 +121,8 @@ let currentDeviceIndex = 0
 const cameraView = ref<HTMLElement>()
 const webcamContainer = ref<HTMLElement>()
 
-// Grid system (3x2 grid = 6 cells)
-const gridCells = ref(Array.from({ length: 6 }, (_, index) => ({
+// Grid system (5x2 grid = 10 cells)
+const gridCells = ref(Array.from({ length: 10 }, (_, index) => ({
 	filled: false,
 	active: false,
 	shape: '',
@@ -121,6 +136,36 @@ const shapePositions = ref(new Map<string, number>())
 
 const MODEL_URL = '/my_model/'
 
+// Valid classes (excluding neutral classes)
+const VALID_CLASSES = [
+	'yahaposha', 'vitegen', 'tea_logo', 'zellers', 'nonfat', 'vitagen',
+	'fit text non fat', 'not fat', 'tea_leaf', 'tea cup', 'tea_text',
+	'tea_pack', '400g nonfat', 'tempo_biscuit', 'tempo_logo_logo', 'tempo_pack'
+]
+
+// Neutral classes that don't score
+const NEUTRAL_CLASSES = ['ape_kelly_bonus', 'Class 18']
+
+const initializeRandomClasses = () => {
+	// Select 10 random classes from valid classes
+	const shuffled = [...VALID_CLASSES].sort(() => 0.5 - Math.random())
+	selectedClasses.value = shuffled.slice(0, 10)
+	
+	// Store in localStorage
+	const userData = localStorage.getItem('scavhunt_user')
+	if (userData) {
+		const user = JSON.parse(userData)
+		const gameData = {
+			participantId: participantId.value,
+			selectedClasses: selectedClasses.value,
+			detectedClasses: [],
+			completed: false,
+			startTime: Date.now()
+		}
+		localStorage.setItem(`game_${user.phone}`, JSON.stringify(gameData))
+	}
+}
+
 onMounted(async () => {
 	// Get user data
 	const userData = localStorage.getItem('scavhunt_user')
@@ -132,9 +177,23 @@ onMounted(async () => {
 	const user = JSON.parse(userData)
 	userName.value = user.name
 	userPhone.value = user.phone
+	participantId.value = `${user.phone}_${Date.now()}`
+
+	// Check if user has already completed the game
+	const gameData = localStorage.getItem(`game_${user.phone}`)
+	if (gameData) {
+		const parsedGameData = JSON.parse(gameData)
+		if (parsedGameData.completed) {
+			alert('You have already completed this game!')
+			router.push('/')
+			return
+		}
+	}
+
+	// Initialize random classes for this game
+	initializeRandomClasses()
 
 	// Initialize camera and model
-	//await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
 	await getCameras()
 	await initializeCamera()
 })
@@ -225,49 +284,137 @@ const predict = async () => {
 
 		currentDetection.value = bestPrediction
 
-		// If confidence is high enough, consider it a detection
-		if (bestPrediction.probability > 0.9) {
-			handleShapeDetection(bestPrediction.className)
+		// Track detections for consistency (only for selected classes)
+		if (bestPrediction.probability > CONFIDENCE_THRESHOLD && 
+			selectedClasses.value.includes(bestPrediction.className)) {
+			
+			const className = bestPrediction.className
+			const currentTime = Date.now()
+			
+			if (!detectionTracker.value.has(className)) {
+				detectionTracker.value.set(className, { count: 1, lastDetected: currentTime })
+			} else {
+				const tracker = detectionTracker.value.get(className)!
+				
+				// If detection is within reasonable time frame, increment count
+				if (currentTime - tracker.lastDetected < 500) { // 500ms gap tolerance
+					tracker.count++
+					tracker.lastDetected = currentTime
+				} else {
+					// Reset count if gap is too long
+					tracker.count = 1
+					tracker.lastDetected = currentTime
+				}
+				
+				// If we have enough consistent detections (3 seconds worth)
+				if (tracker.count >= DETECTION_THRESHOLD) {
+					handleShapeDetection(className)
+					// Reset tracker after successful detection
+					detectionTracker.value.delete(className)
+				}
+			}
+		}
+		
+		// Clean up old trackers (remove if not detected recently)
+		const currentTime = Date.now()
+		for (const [className, tracker] of detectionTracker.value.entries()) {
+			if (currentTime - tracker.lastDetected > 1000) { // 1 second timeout
+				detectionTracker.value.delete(className)
+			}
 		}
 	} catch (error) {
 		console.error('Prediction error:', error)
 	}
 }
 
-const handleShapeDetection = (shapeName: string) => {
-	// If this shape hasn't been detected before
-	if (!detectedShapes.value.has(shapeName)) {
-		detectedShapes.value.add(shapeName)
+const handleShapeDetection = async (shapeName: string) => {
+	// Only process if this is one of the selected classes and not already detected
+	if (!selectedClasses.value.includes(shapeName) || detectedShapes.value.has(shapeName)) {
+		return
+	}
 
-		// Assign a random grid position if not already assigned
-		if (!shapePositions.value.has(shapeName)) {
-			const availablePositions = gridCells.value
-				.map((cell, index) => ({ cell, index }))
-				.filter(({ cell }) => !cell.filled)
-				.map(({ index }) => index)
+	detectedShapes.value.add(shapeName)
 
-			if (availablePositions.length > 0) {
-				const randomPosition = availablePositions[Math.floor(Math.random() * availablePositions.length)]
-				shapePositions.value.set(shapeName, randomPosition)
+	// Update localStorage
+	const userData = localStorage.getItem('scavhunt_user')
+	if (userData) {
+		const user = JSON.parse(userData)
+		const gameData = JSON.parse(localStorage.getItem(`game_${user.phone}`) || '{}')
+		gameData.detectedClasses = Array.from(detectedShapes.value)
+		localStorage.setItem(`game_${user.phone}`, JSON.stringify(gameData))
+	}
 
-				// Fill the grid cell
-				gridCells.value[randomPosition].filled = true
-				gridCells.value[randomPosition].shape = getShapeEmoji(shapeName)
-				gridCells.value[randomPosition].overlayImage = getOverlayImage(randomPosition + 1)
-				gridCells.value[randomPosition].shapeName = shapeName
-				gridCells.value[randomPosition].active = true
+	// Assign a random grid position if not already assigned
+	if (!shapePositions.value.has(shapeName)) {
+		const availablePositions = gridCells.value
+			.map((cell, index) => ({ cell, index }))
+			.filter(({ cell }) => !cell.filled)
+			.map(({ index }) => index)
 
-				// Remove active class after animation
-				setTimeout(() => {
-					gridCells.value[randomPosition].active = false
-				}, 1000)
+		if (availablePositions.length > 0) {
+			const randomPosition = availablePositions[Math.floor(Math.random() * availablePositions.length)]
+			shapePositions.value.set(shapeName, randomPosition)
 
-				// Check if game is completed
-				if (detectedShapes.value.size >= 6) {
-					completionTime.value = Date.now() - startTime.value
-					gameCompleted.value = true
-				}
+			// Fill the grid cell
+			gridCells.value[randomPosition].filled = true
+			gridCells.value[randomPosition].shape = getShapeEmoji(shapeName)
+			gridCells.value[randomPosition].overlayImage = getOverlayImage(randomPosition + 1)
+			gridCells.value[randomPosition].shapeName = shapeName
+			gridCells.value[randomPosition].active = true
+
+			// Remove active class after animation
+			setTimeout(() => {
+				gridCells.value[randomPosition].active = false
+			}, 1000)
+
+			// Check if game is completed (found all 10 selected classes)
+			if (detectedShapes.value.size >= 10) {
+				completionTime.value = Date.now() - startTime.value
+				await completeGame()
 			}
+		}
+	}
+}
+
+const completeGame = async () => {
+	gameCompleted.value = true
+
+	// Update localStorage to mark as completed
+	const userData = localStorage.getItem('scavhunt_user')
+	if (userData) {
+		const user = JSON.parse(userData)
+		const gameData = JSON.parse(localStorage.getItem(`game_${user.phone}`) || '{}')
+		gameData.completed = true
+		gameData.completionTime = completionTime.value
+		gameData.endTime = Date.now()
+		localStorage.setItem(`game_${user.phone}`, JSON.stringify(gameData))
+
+		// Upload data to server
+		try {
+			const uploadData = {
+				participantId: participantId.value,
+				phone: user.phone,
+				name: user.name,
+				selectedClasses: selectedClasses.value,
+				detectedClasses: Array.from(detectedShapes.value),
+				completionTime: completionTime.value,
+				startTime: startTime.value,
+				endTime: Date.now()
+			}
+
+			const response = await fetch('https://malibanscav.dev.artslabcreatives.com/games', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(uploadData)
+			})
+
+			if (!response.ok) {
+				console.error('Failed to upload game data:', response.statusText)
+			}
+		} catch (error) {
+			console.error('Error uploading game data:', error)
 		}
 	}
 }
@@ -299,7 +446,10 @@ const formatTime = (ms: number): string => {
 }
 
 const resetGame = () => {
+	// This function is kept for development purposes but shouldn't be used in production
+	// since players should only play once
 	detectedShapes.value.clear()
+	detectionTracker.value.clear()
 	shapePositions.value.clear()
 	gridCells.value.forEach(cell => {
 		cell.filled = false
@@ -311,6 +461,14 @@ const resetGame = () => {
 	gameCompleted.value = false
 	startTime.value = Date.now()
 	completionTime.value = 0
+	
+	// Clear game data from localStorage (for development only)
+	const userData = localStorage.getItem('scavhunt_user')
+	if (userData) {
+		const user = JSON.parse(userData)
+		localStorage.removeItem(`game_${user.phone}`)
+		initializeRandomClasses()
+	}
 }
 
 const goHome = () => {
@@ -456,7 +614,7 @@ const toggleScreenFlip = () => {
 	right: 0;
 	bottom: 0;
 	display: grid;
-	grid-template-columns: repeat(3, 1fr);
+	grid-template-columns: repeat(5, 1fr);
 	grid-template-rows: repeat(2, 1fr);
 	gap: 2px;
 	padding: 60px 10px 10px;
@@ -532,7 +690,8 @@ const toggleScreenFlip = () => {
 	padding: 10px 20px;
 	border-radius: 25px;
 	display: flex;
-	gap: 10px;
+	flex-direction: column;
+	gap: 5px;
 	align-items: center;
 }
 
@@ -543,6 +702,33 @@ const toggleScreenFlip = () => {
 .confidence {
 	color: #ffd700;
 	font-size: 0.9rem;
+}
+
+.detection-progress {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 5px;
+	margin-top: 5px;
+}
+
+.progress-bar {
+	width: 100px;
+	height: 4px;
+	background: rgba(255, 255, 255, 0.3);
+	border-radius: 2px;
+	overflow: hidden;
+}
+
+.progress-fill {
+	height: 100%;
+	background: #ffd700;
+	transition: width 0.1s ease;
+}
+
+.progress-text {
+	font-size: 0.8rem;
+	color: #ffd700;
 }
 
 .success-modal {
@@ -565,6 +751,14 @@ const toggleScreenFlip = () => {
 	text-align: center;
 	max-width: 400px;
 	width: 90%;
+}
+
+.win-image {
+	width: 100%;
+	max-width: 300px;
+	height: auto;
+	border-radius: 8px;
+	margin-bottom: 20px;
 }
 
 .modal-content h2 {
