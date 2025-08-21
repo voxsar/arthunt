@@ -177,7 +177,16 @@ onMounted(async () => {
 	const user = JSON.parse(userData)
 	userName.value = user.name
 	userPhone.value = user.phone
-	participantId.value = user.id || `${user.phone}_${Date.now()}` // Use registered ID or fallback
+	
+	// Ensure we have a valid participant ID from registration
+	if (!user.id) {
+		console.error('No participant ID found. User may not be properly registered.')
+		alert('Registration data is incomplete. Please register again.')
+		router.push('/')
+		return
+	}
+	participantId.value = user.id
+	console.log('Using participant ID:', participantId.value)
 
 	// Check if user has already completed the game
 	const gameData = localStorage.getItem(`game_${user.phone}`)
@@ -402,7 +411,9 @@ const completeGame = async () => {
 				endTime: Date.now()
 			}
 
-			const response = await fetch('https://malibanscav.dev.artslabcreatives.com/games', {
+			console.log('Uploading game data with participant ID:', participantId.value, uploadData)
+
+			const response = await fetch('https://malibanscav.dev.artslabcreatives.com/api/games', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -412,6 +423,8 @@ const completeGame = async () => {
 
 			if (!response.ok) {
 				console.error('Failed to upload game data:', response.statusText)
+			} else {
+				console.log('Game data uploaded successfully')
 			}
 		} catch (error) {
 			console.error('Error uploading game data:', error)

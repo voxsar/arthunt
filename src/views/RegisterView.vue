@@ -99,6 +99,12 @@ const handleSubmit = async () => {
 			}
 
 			const participant = await response.json()
+			console.log('Registration successful, participant:', participant)
+
+			// Ensure we have a valid participant ID
+			if (!participant.id) {
+				throw new Error('Invalid participant data received')
+			}
 
 			// Store user data with participant ID in localStorage for the game
 			localStorage.setItem('scavhunt_user', JSON.stringify({
@@ -107,6 +113,8 @@ const handleSubmit = async () => {
 				phone: form.value.phone,
 				registeredAt: new Date().toISOString()
 			}))
+
+			console.log('User data stored with participant ID:', participant.id)
 
 			// Navigate to camera view
 			router.push('/camera')
