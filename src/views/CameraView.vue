@@ -56,11 +56,12 @@
 				<div v-if="currentDetection" class="current-detection">
 					<span class="detection-label">{{ currentDetection.className }}</span>
 					<span class="confidence">{{ (currentDetection.probability * 100).toFixed(1) }}%</span>
-					<div v-if="selectedClasses.includes(currentDetection.className) && detectionTracker.has(currentDetection.className)" 
-						 class="detection-progress">
+					<div v-if="selectedClasses.includes(currentDetection.className) && detectionTracker.has(currentDetection.className)"
+						class="detection-progress">
 						<div class="progress-bar">
-							<div class="progress-fill" 
-								 :style="{ width: `${((detectionTracker.get(currentDetection.className)?.count || 0) / DETECTION_THRESHOLD) * 100}%` }"></div>
+							<div class="progress-fill"
+								:style="{ width: `${((detectionTracker.get(currentDetection.className)?.count || 0) / DETECTION_THRESHOLD) * 100}%` }">
+							</div>
 						</div>
 						<span class="progress-text">Hold steady...</span>
 					</div>
@@ -150,7 +151,7 @@ const initializeRandomClasses = () => {
 	// Select 10 random classes from valid classes
 	const shuffled = [...VALID_CLASSES].sort(() => 0.5 - Math.random())
 	selectedClasses.value = shuffled.slice(0, 10)
-	
+
 	// Store in localStorage
 	const userData = localStorage.getItem('scavhunt_user')
 	if (userData) {
@@ -177,7 +178,7 @@ onMounted(async () => {
 	const user = JSON.parse(userData)
 	userName.value = user.name
 	userPhone.value = user.phone
-	
+
 	// Ensure we have a valid participant ID from registration
 	if (!user.id) {
 		console.error('No participant ID found. User may not be properly registered.')
@@ -294,17 +295,17 @@ const predict = async () => {
 		currentDetection.value = bestPrediction
 
 		// Track detections for consistency (only for selected classes)
-		if (bestPrediction.probability > CONFIDENCE_THRESHOLD && 
+		if (bestPrediction.probability > CONFIDENCE_THRESHOLD &&
 			selectedClasses.value.includes(bestPrediction.className)) {
-			
+
 			const className = bestPrediction.className
 			const currentTime = Date.now()
-			
+
 			if (!detectionTracker.value.has(className)) {
 				detectionTracker.value.set(className, { count: 1, lastDetected: currentTime })
 			} else {
 				const tracker = detectionTracker.value.get(className)!
-				
+
 				// If detection is within reasonable time frame, increment count
 				if (currentTime - tracker.lastDetected < 500) { // 500ms gap tolerance
 					tracker.count++
@@ -314,7 +315,7 @@ const predict = async () => {
 					tracker.count = 1
 					tracker.lastDetected = currentTime
 				}
-				
+
 				// If we have enough consistent detections (3 seconds worth)
 				if (tracker.count >= DETECTION_THRESHOLD) {
 					handleShapeDetection(className)
@@ -323,7 +324,7 @@ const predict = async () => {
 				}
 			}
 		}
-		
+
 		// Clean up old trackers (remove if not detected recently)
 		const currentTime = Date.now()
 		for (const [className, tracker] of detectionTracker.value.entries()) {
@@ -352,6 +353,9 @@ const handleShapeDetection = async (shapeName: string) => {
 		gameData.detectedClasses = Array.from(detectedShapes.value)
 		localStorage.setItem(`game_${user.phone}`, JSON.stringify(gameData))
 	}
+
+	// Send progress update to server for each successful detection
+	await updateGameProgress(shapeName)
 
 	// Assign a random grid position if not already assigned
 	if (!shapePositions.value.has(shapeName)) {
@@ -385,6 +389,48 @@ const handleShapeDetection = async (shapeName: string) => {
 	}
 }
 
+const updateGameProgress = async (detectedClassName: string) => {
+	// Send progress update to server for each successful detection
+	const userData = localStorage.getItem('scavhunt_user')
+	if (userData) {
+		const user = JSON.parse(userData)
+
+		try {
+			const progressData = {
+				participant_id: participantId.value,
+				phone: user.phone,
+				name: user.name,
+				selectedClasses: selectedClasses.value,
+				detectedClasses: Array.from(detectedShapes.value),
+				latestDetection: detectedClassName,
+				currentProgress: detectedShapes.value.size,
+				totalRequired: 6,
+				completed: false,
+				timestamp: Date.now(),
+				startTime: startTime.value
+			}
+
+			console.log('Sending progress update for detection:', detectedClassName, progressData)
+
+			const response = await fetch('https://malibanscav.dev.artslabcreatives.com/api/games', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(progressData)
+			})
+
+			if (!response.ok) {
+				console.error('Failed to send progress update:', response.statusText)
+			} else {
+				console.log('Progress update sent successfully for:', detectedClassName)
+			}
+		} catch (error) {
+			console.error('Error sending progress update:', error)
+		}
+	}
+}
+
 const completeGame = async () => {
 	gameCompleted.value = true
 
@@ -408,10 +454,12 @@ const completeGame = async () => {
 				detectedClasses: Array.from(detectedShapes.value),
 				completionTime: completionTime.value,
 				startTime: startTime.value,
-				endTime: Date.now()
+				endTime: Date.now(),
+				completed: true,
+				finalCompletion: true // Flag to indicate this is the final completion
 			}
 
-			console.log('Uploading game data with participant ID:', participantId.value, uploadData)
+			console.log('Uploading final game completion data with participant ID:', participantId.value, uploadData)
 
 			const response = await fetch('https://malibanscav.dev.artslabcreatives.com/api/games', {
 				method: 'POST',
@@ -474,7 +522,7 @@ const resetGame = () => {
 	gameCompleted.value = false
 	startTime.value = Date.now()
 	completionTime.value = 0
-	
+
 	// Clear game data from localStorage (for development only)
 	const userData = localStorage.getItem('scavhunt_user')
 	if (userData) {
