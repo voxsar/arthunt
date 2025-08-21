@@ -156,7 +156,7 @@ const initializeRandomClasses = () => {
 	if (userData) {
 		const user = JSON.parse(userData)
 		const gameData = {
-			participantId: participantId.value,
+			participant_id: participantId.value,
 			selectedClasses: selectedClasses.value,
 			detectedClasses: [],
 			completed: false,
@@ -177,7 +177,7 @@ onMounted(async () => {
 	const user = JSON.parse(userData)
 	userName.value = user.name
 	userPhone.value = user.phone
-	participantId.value = `${user.phone}_${Date.now()}`
+	participantId.value = user.id || `${user.phone}_${Date.now()}` // Use registered ID or fallback
 
 	// Check if user has already completed the game
 	const gameData = localStorage.getItem(`game_${user.phone}`)
@@ -392,7 +392,7 @@ const completeGame = async () => {
 		// Upload data to server
 		try {
 			const uploadData = {
-				participantId: participantId.value,
+				participant_id: participantId.value,
 				phone: user.phone,
 				name: user.name,
 				selectedClasses: selectedClasses.value,

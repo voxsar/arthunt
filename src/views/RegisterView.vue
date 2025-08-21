@@ -19,7 +19,7 @@
 				</div>
 
 				<button type="submit" :disabled="!isValid" class="submit-btn">
-					Start Scavenger Hunt
+					{{ isLoading ? 'Registering...' : 'Start Scavenger Hunt' }}
 				</button>
 			</form>
 		</div>
@@ -43,6 +43,8 @@ const errors = ref({
 	phone: ''
 })
 
+const isLoading = ref(false)
+
 // Phone validation for format like 0774395913
 const validatePhone = (phone: string): boolean => {
 	const phoneRegex = /^0[7-9]\d{8}$/
@@ -57,7 +59,8 @@ const isValid = computed(() => {
 	return validateName(form.value.name) &&
 		validatePhone(form.value.phone) &&
 		!errors.value.name &&
-		!errors.value.phone
+		!errors.value.phone &&
+		!isLoading.value
 })
 
 const validateForm = () => {
@@ -73,19 +76,46 @@ const validateForm = () => {
 	}
 }
 
-const handleSubmit = () => {
+const handleSubmit = async () => {
 	validateForm()
 
 	if (isValid.value) {
-		// Store user data in localStorage for the game
-		localStorage.setItem('scavhunt_user', JSON.stringify({
-			name: form.value.name,
-			phone: form.value.phone,
-			registeredAt: new Date().toISOString()
-		}))
+		isLoading.value = true
+		try {
+			// Send registration data to Laravel API
+			const response = await fetch('https://malibanscav.dev.artslabcreatives.com/api/participants', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					name: form.value.name,
+					mobile: form.value.phone
+				})
+			})
 
-		// Navigate to camera view
-		router.push('/camera')
+			if (!response.ok) {
+				throw new Error('Registration failed')
+			}
+
+			const participant = await response.json()
+
+			// Store user data with participant ID in localStorage for the game
+			localStorage.setItem('scavhunt_user', JSON.stringify({
+				id: participant.id,
+				name: form.value.name,
+				phone: form.value.phone,
+				registeredAt: new Date().toISOString()
+			}))
+
+			// Navigate to camera view
+			router.push('/camera')
+		} catch (error) {
+			console.error('Registration error:', error)
+			alert('Registration failed. Please try again.')
+		} finally {
+			isLoading.value = false
+		}
 	}
 }
 
