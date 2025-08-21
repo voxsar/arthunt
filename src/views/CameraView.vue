@@ -76,6 +76,17 @@
 				<h2>🎉 Congratulations!</h2>
 				<p>You've found all 6 items!</p>
 				<p>Hunt completed in {{ formatTime(completionTime) }}</p>
+
+				<div class="game-rules">
+					<h3>🎁 Game Rules</h3>
+					<ol>
+						<li>Download the given image.</li>
+						<li>Share it on your Facebook story and tag the official Maliban page.</li>
+						<li>Winners will be selected every hour through a raffle draw.</li>
+						<li>Each winner will receive a special Maliban gift hamper.</li>
+					</ol>
+				</div>
+
 				<button @click="goHome" class="home-btn">Go Home</button>
 			</div>
 		</div>
@@ -354,9 +365,6 @@ const handleShapeDetection = async (shapeName: string) => {
 		localStorage.setItem(`game_${user.phone}`, JSON.stringify(gameData))
 	}
 
-	// Send progress update to server for each successful detection
-	await updateGameProgress(shapeName)
-
 	// Assign a random grid position if not already assigned
 	if (!shapePositions.value.has(shapeName)) {
 		const availablePositions = gridCells.value
@@ -379,6 +387,9 @@ const handleShapeDetection = async (shapeName: string) => {
 			setTimeout(() => {
 				gridCells.value[randomPosition].active = false
 			}, 1000)
+
+			// Send progress update to server AFTER the grid is updated
+			await updateGameProgress(shapeName)
 
 			// Check if game is completed (found all 6 grid positions)
 			if (detectedShapes.value.size >= 6) {
@@ -847,6 +858,34 @@ const toggleScreenFlip = () => {
 .modal-content p {
 	margin-bottom: 15px;
 	color: #333;
+}
+
+.game-rules {
+	background: #f8f9fa;
+	border: 2px solid #e20b1d;
+	border-radius: 10px;
+	padding: 20px;
+	margin: 20px 0;
+	text-align: left;
+}
+
+.game-rules h3 {
+	color: #e20b1d;
+	margin: 0 0 15px 0;
+	text-align: center;
+	font-size: 1.2rem;
+}
+
+.game-rules ol {
+	margin: 0;
+	padding-left: 20px;
+	color: #333;
+}
+
+.game-rules li {
+	margin-bottom: 8px;
+	font-size: 0.95rem;
+	line-height: 1.4;
 }
 
 .reset-btn,

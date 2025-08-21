@@ -7,14 +7,10 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [
-    vue(),
-    vueJsx(),
-    vueDevTools(),
-  ],
+  plugins: [vue(), vueJsx(), vueDevTools()],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
   build: {
@@ -22,10 +18,10 @@ export default defineConfig({
       output: {
         manualChunks: {
           vendor: ['vue', 'vue-router'],
-          teachable: ['@teachablemachine/image', '@tensorflow/tfjs']
-        }
-      }
-    }
+          teachable: ['@teachablemachine/image', '@tensorflow/tfjs'],
+        },
+      },
+    },
   },
-  base: './'
+  base: './',
 })
