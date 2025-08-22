@@ -156,9 +156,8 @@ const VALID_CLASSES = [
 const NEUTRAL_CLASSES = ['ape_kelly_bonus', 'Class 18']
 
 const initializeRandomClasses = () => {
-	// Select 10 random classes from valid classes
-	const shuffled = [...VALID_CLASSES].sort(() => 0.5 - Math.random())
-	selectedClasses.value = shuffled.slice(0, 10)
+	// Use all valid classes (no random selection)
+	selectedClasses.value = [...VALID_CLASSES]
 
 	// Store in localStorage
 	const userData = localStorage.getItem('scavhunt_user')
