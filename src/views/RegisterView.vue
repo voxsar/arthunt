@@ -2,7 +2,7 @@
 	<div class="register-container">
 		<div class="register-form">
 			<MalibanLogo />
-			<h1>Maliban Puzzle Hunt Registration</h1>
+			<h1>Registration</h1>
 			<ul style="color:black;">
 				<li>Download the given image.</li>
 				<li>Share it on your Facebook story and tag the official Maliban page.</li>
