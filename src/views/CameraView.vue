@@ -254,7 +254,32 @@ onMounted(async () => {
 
   document.addEventListener('visibilitychange', onVisibilityChange)
 })
-
+/* =========================
+   Camera helpers
+   ========================= */
+const hardStopWebcam = async () => {
+  try {
+    if (webcam) {
+      try { await webcam.stop() } catch {}
+      const vid = (webcam as any)?.webcam as HTMLVideoElement | undefined
+      const stream: MediaStream | undefined = vid?.srcObject as any
+      if (stream) {
+        stream.getTracks().forEach(t => {
+          try { t.stop() } catch {}
+        })
+        // Clear srcObject to fully release on Safari
+        if (vid) {
+          vid.srcObject = null
+          // @ts-ignore
+          vid.removeAttribute('srcObject')
+        }
+      }
+      try {
+        webcam.canvas?.parentNode?.removeChild(webcam.canvas)
+      } catch {}
+    }
+  } catch {}
+}
 onUnmounted(async () => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
   if (rafId) cancelAnimationFrame(rafId)
