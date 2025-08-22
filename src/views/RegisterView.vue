@@ -3,7 +3,7 @@
 		<div class="register-form">
 			<MalibanLogo />
 			<h1>Maliban Puzzle Hunt Registration</h1>
-			<ul>
+			<ul style="color:black;">
 				<li>Download the given image.</li>
 				<li>Share it on your Facebook story and tag the official Maliban page.</li>
 				<li>Winners will be selected every hour through a raffle draw.</li>
