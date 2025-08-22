@@ -3,6 +3,12 @@
 		<div class="register-form">
 			<MalibanLogo />
 			<h1>Maliban Puzzle Hunt Registration</h1>
+			<ul>
+				<li>Download the given image.</li>
+				<li>Share it on your Facebook story and tag the official Maliban page.</li>
+				<li>Winners will be selected every hour through a raffle draw.</li>
+				<li>Each winner will receive a special Maliban gift hamper.</li>
+			</ul>
 			<form @submit.prevent="handleSubmit">
 				<div class="form-group">
 					<label for="name">Full Name</label>
