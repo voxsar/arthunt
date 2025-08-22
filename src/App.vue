@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
+import IOSInstallPrompt from './components/IOSInstallPrompt.vue'
 </script>
 
 <template>
 	<RouterView />
+	<IOSInstallPrompt />
 </template>
 
 <style>
