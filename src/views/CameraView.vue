@@ -27,7 +27,6 @@
 
 			<div class="header-right">
 				<div class="user-info">
-					<h2>{{ userName }}</h2>
 					<span class="phone">{{ userPhone }}</span>
 				</div>
 				<div class="progress">
@@ -63,7 +62,7 @@
 								:style="{ width: `${((detectionTracker.get(currentDetection.className)?.count || 0) / DETECTION_THRESHOLD) * 100}%` }">
 							</div>
 						</div>
-						<span class="progress-text">Hold steady...</span>
+						<span class="progress-text">Don't shake the phone during scanning</span>
 					</div>
 				</div>
 			</div>
