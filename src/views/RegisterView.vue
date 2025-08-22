@@ -3,12 +3,9 @@
 		<div class="register-form">
 			<MalibanLogo />
 			<h1>Registration</h1>
-			<ul style="color:black;">
-				<li  style="color:black;">Download the given image.</li>
-				<li  style="color:black;">Share it on your Facebook story and tag the official Maliban page.</li>
-				<li  style="color:black;">Winners will be selected every hour through a raffle draw.</li>
-				<li  style="color:black;">Each winner will receive a special Maliban gift hamper.</li>
-			</ul>
+			<button @click="showHowToPlay = true" class="how-to-play-btn" type="button">
+				How to Play
+			</button>
 			<form @submit.prevent="handleSubmit">
 				<div class="form-group">
 					<label for="name">Full Name</label>
@@ -29,6 +26,35 @@
 				</button>
 			</form>
 		</div>
+
+		<!-- How to Play Modal -->
+		<div v-if="showHowToPlay" class="modal-overlay" @click="showHowToPlay = false">
+			<div class="modal-content" @click.stop>
+				<div class="modal-header">
+					<h2>How to Play the Game</h2>
+					<button @click="showHowToPlay = false" class="close-btn">&times;</button>
+				</div>
+				<div class="modal-body">
+					<ol>
+						<li>Register First</li>
+						<li>Visit the Stalls – There are 6 stalls to explore:
+							<ul>
+								<li>Maliban - A50</li>
+								<li>Non-Fat - L8</li>
+								<li>Vitagen - L7</li>
+								<li>Yahaposha - L6</li>
+								<li>Maliban Tea - L5</li>
+								<li>Zellers - A11, A12</li>
+							</ul>
+						</li>
+						<li>Find the Hidden Clues – Each stall has one hidden clue.</li>
+						<li>Use the Camera – After registering, you'll get access to the camera feature.</li>
+						<li>Scan the Clues – Scan the hidden clues at each stall.</li>
+						<li>Solve the Puzzle – Collect all 6 clues to complete the puzzle and stand a chance to win!</li>
+					</ol>
+				</div>
+			</div>
+		</div>
 	</div>
 </template>
 
@@ -38,6 +64,9 @@ import { useRouter } from 'vue-router'
 import MalibanLogo from '../components/MalibanLogo.vue'
 
 const router = useRouter()
+
+// Modal state
+const showHowToPlay = ref(false)
 
 const form = ref({
 	name: '',
@@ -183,6 +212,105 @@ h1 {
 	font-weight: bold;
 }
 
+.how-to-play-btn {
+	width: 100%;
+	padding: 12px;
+	background: #113c66;
+	color: white;
+	border: none;
+	border-radius: 8px;
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+	margin-bottom: 20px;
+	transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.how-to-play-btn:hover {
+	background: #0d2f52;
+	transform: translateY(-1px);
+}
+
+.modal-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.5);
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	z-index: 1000;
+	padding: 20px;
+}
+
+.modal-content {
+	background: white;
+	border-radius: 12px;
+	max-width: 500px;
+	width: 100%;
+	max-height: 80vh;
+	overflow-y: auto;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 20px;
+	border-bottom: 1px solid #e1e5e9;
+}
+
+.modal-header h2 {
+	margin: 0;
+	color: #113c66;
+	font-size: 1.5rem;
+}
+
+.close-btn {
+	background: none;
+	border: none;
+	font-size: 24px;
+	cursor: pointer;
+	color: #666;
+	padding: 0;
+	width: 30px;
+	height: 30px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.close-btn:hover {
+	color: #e20b1d;
+}
+
+.modal-body {
+	padding: 20px;
+}
+
+.modal-body ol {
+	margin: 0;
+	padding-left: 20px;
+	color: #333;
+}
+
+.modal-body li {
+	margin-bottom: 12px;
+	line-height: 1.5;
+}
+
+.modal-body ul {
+	margin: 8px 0;
+	padding-left: 20px;
+}
+
+.modal-body ul li {
+	margin-bottom: 4px;
+}
+
 .form-group {
 	margin-bottom: 20px;
 }
@@ -272,6 +400,31 @@ input.error {
 	.submit-btn {
 		padding: 12px;
 		font-size: 16px;
+	}
+
+	.modal-overlay {
+		padding: 10px;
+	}
+
+	.modal-content {
+		max-height: 90vh;
+	}
+
+	.modal-header {
+		padding: 15px;
+	}
+
+	.modal-header h2 {
+		font-size: 1.2rem;
+	}
+
+	.modal-body {
+		padding: 15px;
+	}
+
+	.how-to-play-btn {
+		padding: 10px;
+		font-size: 14px;
 	}
 }
 </style>
