@@ -91,565 +91,506 @@
 </template>
 
 <script setup lang="ts">
-/**
- * Camera-stable version for iOS/Safari:
- * - Uses facingMode inside video constraints
- * - Avoids strict deviceId on iOS
- * - Fully releases previous MediaStreams before reinit
- * - Guards against double init and duplicate RAF loops
- * - Ensures inline playback on iOS (playsinline, muted)
- */
-
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import * as tmImage from '@teachablemachine/image'
-import MalibanLogo from '../components/MalibanLogo.vue' // keep import if referenced in your template
+import MalibanLogo from '../components/MalibanLogo.vue'
 
 const router = useRouter()
 
-/* =========================
-   User / Game State
-   ========================= */
+// User data
 const userName = ref('')
 const userPhone = ref('')
-const participantId = ref('')
 
+// Game state
 const detectedShapes = ref(new Set<string>())
 const gameCompleted = ref(false)
 const startTime = ref(Date.now())
 const completionTime = ref(0)
 const selectedClasses = ref<string[]>([])
+const participantId = ref('')
 
-// detection tracking (2 seconds at ~30 FPS)
+// Detection tracking for 2-second consistency
 const detectionTracker = ref(new Map<string, { count: number, lastDetected: number }>())
-const DETECTION_THRESHOLD = 60
+const DETECTION_THRESHOLD = 60 // 2 seconds at ~30 FPS
 const CONFIDENCE_THRESHOLD = 0.7
 
-/* =========================
-   Camera / Model
-   ========================= */
+// Camera controls
 const isScreenFlipped = ref(false)
+const useFrontCamera = ref(false)
+
+// TensorFlow.js variables
 let model: tmImage.CustomMobileNet
 let webcam: tmImage.Webcam
-const isModelLoaded = ref(false)
-const currentDetection = ref<{ className: string; probability: number } | null>(null)
-
+let isModelLoaded = ref(false)
+let currentDetection = ref<{ className: string; probability: number } | null>(null)
 let videoDevices: MediaDeviceInfo[] = []
 let currentDeviceIndex = 0
-let isInitializing = false
-let rafId: number | null = null
-
-// Template refs
+// Camera refs
 const cameraView = ref<HTMLElement>()
 const webcamContainer = ref<HTMLElement>()
 
-/* =========================
-   Grid (3x2)
-   ========================= */
-const gridCells = ref(
-  Array.from({ length: 6 }, (_, index) => ({
-    filled: false,
-    active: false,
-    shape: '',
-    overlayImage: '',
-    shapeName: '',
-    id: index,
-  }))
-)
+// Grid system (3x2 grid = 6 cells)
+const gridCells = ref(Array.from({ length: 6 }, (_, index) => ({
+	filled: false,
+	active: false,
+	shape: '',
+	overlayImage: '',
+	shapeName: '',
+	id: index
+})))
 
+// Assign random positions for each user
 const shapePositions = ref(new Map<string, number>())
 
 const MODEL_URL = '/my_model/'
 
-// Valid and neutral classes
+// Valid classes (excluding neutral classes)
 const VALID_CLASSES = [
-  'yahaposha', 'vitegen', 'tea_logo', 'zellers', 'nonfat', 'vitagen',
-  'fit text non fat', 'not fat', 'tea_leaf', 'tea cup', 'tea_text',
-  'tea_pack', '400g nonfat', 'tempo_biscuit', 'tempo_logo_logo', 'tempo_pack'
+	'yahaposha', 'vitegen', 'tea_logo', 'zellers', 'nonfat', 'vitagen',
+	'fit text non fat', 'not fat', 'tea_leaf', 'tea cup', 'tea_text',
+	'tea_pack', '400g nonfat', 'tempo_biscuit', 'tempo_logo_logo', 'tempo_pack'
 ]
-const NEUTRAL_CLASSES = ['ape_kelly_bonus', 'Class 18'] // (kept for reference)
+
+// Neutral classes that don't score
+const NEUTRAL_CLASSES = ['ape_kelly_bonus', 'Class 18']
 
 const initializeRandomClasses = () => {
-  selectedClasses.value = [...VALID_CLASSES]
-  const userData = localStorage.getItem('scavhunt_user')
-  if (userData) {
-    const user = JSON.parse(userData)
-    const gameData = {
-      participant_id: participantId.value,
-      selectedClasses: selectedClasses.value,
-      detectedClasses: [],
-      completed: false,
-      startTime: Date.now(),
-    }
-    localStorage.setItem(`game_${user.phone}`, JSON.stringify(gameData))
-  }
+	// Use all valid classes (no random selection)
+	selectedClasses.value = [...VALID_CLASSES]
+
+	// Store in localStorage
+	const userData = localStorage.getItem('scavhunt_user')
+	if (userData) {
+		const user = JSON.parse(userData)
+		const gameData = {
+			participant_id: participantId.value,
+			selectedClasses: selectedClasses.value,
+			detectedClasses: [],
+			completed: false,
+			startTime: Date.now()
+		}
+		localStorage.setItem(`game_${user.phone}`, JSON.stringify(gameData))
+	}
 }
 
-/* =========================
-   Lifecycle
-   ========================= */
 onMounted(async () => {
-  // Get user data
-  const userData = localStorage.getItem('scavhunt_user')
-  if (!userData) {
-    router.push('/')
-    return
-  }
+	// Get user data
+	const userData = localStorage.getItem('scavhunt_user')
+	if (!userData) {
+		router.push('/')
+		return
+	}
 
-  const user = JSON.parse(userData)
-  userName.value = user.name
-  userPhone.value = user.phone
+	const user = JSON.parse(userData)
+	userName.value = user.name
+	userPhone.value = user.phone
 
-  if (!user.id) {
-    console.error('No participant ID found. User may not be properly registered.')
-    alert('Registration data is incomplete. Please register again.')
-    router.push('/')
-    return
-  }
-  participantId.value = user.id
+	// Ensure we have a valid participant ID from registration
+	if (!user.id) {
+		console.error('No participant ID found. User may not be properly registered.')
+		alert('Registration data is incomplete. Please register again.')
+		router.push('/')
+		return
+	}
+	participantId.value = user.id
+	console.log('Using participant ID:', participantId.value)
 
-  const gameData = localStorage.getItem(`game_${user.phone}`)
-  if (gameData) {
-    const parsedGameData = JSON.parse(gameData)
-    if (parsedGameData.completed) {
-      alert('You have already completed this game!')
-      router.push('/')
-      return
-    }
-  }
+	// Check if user has already completed the game
+	const gameData = localStorage.getItem(`game_${user.phone}`)
+	if (gameData) {
+		const parsedGameData = JSON.parse(gameData)
+		if (parsedGameData.completed) {
+			alert('You have already completed this game!')
+			router.push('/')
+			return
+		}
+	}
 
-  initializeRandomClasses()
+	// Initialize random classes for this game
+	initializeRandomClasses()
 
-  // Ensure permission prompt so device labels populate
-  try { await navigator.mediaDevices.getUserMedia({ video: true }); } catch {}
-
-  await getCameras()
-  await initializeCamera()
-
-  document.addEventListener('visibilitychange', onVisibilityChange)
+	// Initialize camera and model
+	await getCameras()
+	await initializeCamera()
 })
 
-onUnmounted(async () => {
-  document.removeEventListener('visibilitychange', onVisibilityChange)
-  if (rafId) cancelAnimationFrame(rafId)
-  await hardStopWebcam()
+onUnmounted(() => {
+	if (webcam) {
+		webcam.stop()
+	}
 })
-
-/* =========================
-   Platform helpers
-   ========================= */
-const isIOS = () =>
-  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-  (navigator.platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1)
-
-/* =========================
-   Camera helpers
-   ========================= */
-const hardStopWebcam = async () => {
-  try {
-    if (webcam) {
-      try { await webcam.stop() } catch {}
-      const vid = (webcam as any)?.webcam as HTMLVideoElement | undefined
-      const stream: MediaStream | undefined = vid?.srcObject as any
-      if (stream) {
-        stream.getTracks().forEach(t => {
-          try { t.stop() } catch {}
-        })
-        // Clear srcObject to fully release on Safari
-        if (vid) {
-          vid.srcObject = null
-          // @ts-ignore
-          vid.removeAttribute('srcObject')
-        }
-      }
-      try {
-        webcam.canvas?.parentNode?.removeChild(webcam.canvas)
-      } catch {}
-    }
-  } catch {}
-}
 
 const getCameras = async () => {
-  const devices = await navigator.mediaDevices.enumerateDevices()
-  videoDevices = devices.filter(d => d.kind === 'videoinput')
+	const devices = await navigator.mediaDevices.enumerateDevices()
+	videoDevices = devices.filter(d => d.kind === "videoinput")
 
-  const backIndex = videoDevices.findIndex(d =>
-    (d.label || '').toLowerCase().includes('back') ||
-    (d.label || '').toLowerCase().includes('environment')
-  )
-  currentDeviceIndex = backIndex >= 0 ? backIndex : 0
+	// Prefer back camera as default if available
+	const backIndex = videoDevices.findIndex(d =>
+		d.label.toLowerCase().includes("back") ||
+		d.label.toLowerCase().includes("environment")
+	)
+
+	currentDeviceIndex = backIndex >= 0 ? backIndex : 0
 }
 
-const buildConstraints = () => {
-  const base: MediaTrackConstraints = {
-    width: { ideal: 640 },
-    height: { ideal: 480 },
-  }
-
-  const mode = isScreenFlipped.value ? 'user' : 'environment'
-
-  if (isIOS()) {
-    // iOS: rely on facingMode; deviceId is fragile there
-    return { video: { ...base, facingMode: mode } }
-  }
-
-  // Non-iOS: prefer deviceId if available, but not strict "exact"
-  const deviceId = videoDevices[currentDeviceIndex]?.deviceId
-  const video: MediaTrackConstraints = deviceId
-    ? { ...base, deviceId: { ideal: deviceId }, facingMode: mode }
-    : { ...base, facingMode: mode }
-
-  return { video }
-}
-
-/* =========================
-   Init / Loop
-   ========================= */
 const initializeCamera = async () => {
-  if (isInitializing) return
-  isInitializing = true
-  try {
-    // Load model once
-    if (!model) {
-      const modelURL = MODEL_URL + 'model.json'
-      const metadataURL = MODEL_URL + 'metadata.json'
-      model = await tmImage.load(modelURL, metadataURL)
-      isModelLoaded.value = true
-    }
+	try {
+		if (!model) {
+			const modelURL = MODEL_URL + "model.json"
+			const metadataURL = MODEL_URL + "metadata.json"
+			model = await tmImage.load(modelURL, metadataURL)
+			isModelLoaded.value = true
+		}
 
-    // Ensure any old streams are fully stopped
-    await hardStopWebcam()
+		if (webcamContainer.value) {
+			webcamContainer.value.innerHTML = ""
+		}
 
-    if (webcamContainer.value) {
-      webcamContainer.value.innerHTML = ''
-    }
+		// Select correct camera by deviceId
+		const deviceId = videoDevices[currentDeviceIndex]?.deviceId
+		const constraints = {
+			video: {
+				deviceId: deviceId ? { exact: deviceId } : 'environment',
+				width: 640,
+				height: 480
+			},
+			facingMode: isScreenFlipped.value ? 'user' : 'environment'
+		}
 
-    const constraints = buildConstraints()
+		webcam = new tmImage.Webcam(640, 480, false) // no auto-flip
+		await webcam.setup(constraints)
+		await webcam.play()
 
-    webcam = new tmImage.Webcam(640, 480, false)
-    await webcam.setup(constraints)
-    await webcam.play()
+		if (webcamContainer.value) {
+			webcamContainer.value.appendChild(webcam.canvas)
+			webcam.canvas.style.width = "100%"
+			webcam.canvas.style.height = "100%"
+			webcam.canvas.style.objectFit = "cover"
+		}
 
-    // Ensure inline/muted video on iOS for autoplay
-    const vid = (webcam as any)?.webcam as HTMLVideoElement | undefined
-    if (vid) {
-      vid.setAttribute('playsinline', 'true')
-      vid.setAttribute('muted', 'true')
-      try { await vid.play() } catch {}
-    }
-
-    if (webcamContainer.value) {
-      webcamContainer.value.appendChild(webcam.canvas)
-      webcam.canvas.style.width = '100%'
-      webcam.canvas.style.height = '100%'
-      webcam.canvas.style.objectFit = 'cover'
-    }
-
-    if (rafId) cancelAnimationFrame(rafId)
-    const tick = async () => {
-      if (!gameCompleted.value && webcam && model) {
-        webcam.update()
-        await predict()
-        rafId = requestAnimationFrame(tick)
-      }
-    }
-    rafId = requestAnimationFrame(tick)
-  } catch (err) {
-    console.error('Error initializing camera:', err)
-    alert('Error accessing camera. Please check permissions or try another device.')
-  } finally {
-    isInitializing = false
-  }
+		requestAnimationFrame(loop)
+	} catch (err) {
+		console.error("Error initializing camera:", err)
+		alert("Error accessing camera. Please check permissions or try another device.")
+	}
 }
 
-const onVisibilityChange = async () => {
-  if (document.visibilityState === 'hidden') {
-    if (rafId) cancelAnimationFrame(rafId)
-    await hardStopWebcam()
-  } else if (document.visibilityState === 'visible' && !gameCompleted.value) {
-    await initializeCamera()
-  }
+
+const loop = async () => {
+	if (webcam && model && !gameCompleted.value) {
+		webcam.update()
+		await predict()
+		requestAnimationFrame(loop)
+	}
 }
 
-/* =========================
-   Prediction
-   ========================= */
 const predict = async () => {
-  if (!model || !webcam) return
+	if (!model || !webcam) return
 
-  try {
-    const predictions = await model.predict(webcam.canvas)
+	try {
+		const predictions = await model.predict(webcam.canvas)
 
-    // Find the highest confidence prediction
-    let bestPrediction = predictions[0]
-    for (let i = 1; i < predictions.length; i++) {
-      if (predictions[i].probability > bestPrediction.probability) {
-        bestPrediction = predictions[i]
-      }
-    }
+		// Find the highest confidence prediction
+		let bestPrediction = predictions[0]
+		for (let i = 1; i < predictions.length; i++) {
+			if (predictions[i].probability > bestPrediction.probability) {
+				bestPrediction = predictions[i]
+			}
+		}
 
-    currentDetection.value = bestPrediction
+		currentDetection.value = bestPrediction
 
-    // Track detections for consistency
-    if (
-      bestPrediction.probability > CONFIDENCE_THRESHOLD &&
-      selectedClasses.value.includes(bestPrediction.className)
-    ) {
-      const className = bestPrediction.className
-      const currentTime = Date.now()
+		// Track detections for consistency (only for selected classes)
+		if (bestPrediction.probability > CONFIDENCE_THRESHOLD &&
+			selectedClasses.value.includes(bestPrediction.className)) {
 
-      if (!detectionTracker.value.has(className)) {
-        detectionTracker.value.set(className, { count: 1, lastDetected: currentTime })
-      } else {
-        const tracker = detectionTracker.value.get(className)!
-        if (currentTime - tracker.lastDetected < 500) {
-          tracker.count++
-          tracker.lastDetected = currentTime
-        } else {
-          tracker.count = 1
-          tracker.lastDetected = currentTime
-        }
+			const className = bestPrediction.className
+			const currentTime = Date.now()
 
-        if (tracker.count >= DETECTION_THRESHOLD) {
-          await handleShapeDetection(className)
-          detectionTracker.value.delete(className)
-        }
-      }
-    }
+			if (!detectionTracker.value.has(className)) {
+				detectionTracker.value.set(className, { count: 1, lastDetected: currentTime })
+			} else {
+				const tracker = detectionTracker.value.get(className)!
 
-    // Clean up old trackers
-    const now = Date.now()
-    for (const [className, tracker] of detectionTracker.value.entries()) {
-      if (now - tracker.lastDetected > 1000) {
-        detectionTracker.value.delete(className)
-      }
-    }
-  } catch (error) {
-    console.error('Prediction error:', error)
-  }
+				// If detection is within reasonable time frame, increment count
+				if (currentTime - tracker.lastDetected < 500) { // 500ms gap tolerance
+					tracker.count++
+					tracker.lastDetected = currentTime
+				} else {
+					// Reset count if gap is too long
+					tracker.count = 1
+					tracker.lastDetected = currentTime
+				}
+
+				// If we have enough consistent detections (3 seconds worth)
+				if (tracker.count >= DETECTION_THRESHOLD) {
+					handleShapeDetection(className)
+					// Reset tracker after successful detection
+					detectionTracker.value.delete(className)
+				}
+			}
+		}
+
+		// Clean up old trackers (remove if not detected recently)
+		const currentTime = Date.now()
+		for (const [className, tracker] of detectionTracker.value.entries()) {
+			if (currentTime - tracker.lastDetected > 1000) { // 1 second timeout
+				detectionTracker.value.delete(className)
+			}
+		}
+	} catch (error) {
+		console.error('Prediction error:', error)
+	}
 }
 
-/* =========================
-   Detection Handling
-   ========================= */
 const handleShapeDetection = async (shapeName: string) => {
-  if (!selectedClasses.value.includes(shapeName) || detectedShapes.value.has(shapeName)) {
-    return
-  }
+	// Only process if this is one of the selected classes and not already detected
+	if (!selectedClasses.value.includes(shapeName) || detectedShapes.value.has(shapeName)) {
+		return
+	}
 
-  detectedShapes.value.add(shapeName)
+	detectedShapes.value.add(shapeName)
 
-  // Update localStorage
-  const userData = localStorage.getItem('scavhunt_user')
-  if (userData) {
-    const user = JSON.parse(userData)
-    const gameData = JSON.parse(localStorage.getItem(`game_${user.phone}`) || '{}')
-    gameData.detectedClasses = Array.from(detectedShapes.value)
-    localStorage.setItem(`game_${user.phone}`, JSON.stringify(gameData))
-  }
+	// Update localStorage
+	const userData = localStorage.getItem('scavhunt_user')
+	if (userData) {
+		const user = JSON.parse(userData)
+		const gameData = JSON.parse(localStorage.getItem(`game_${user.phone}`) || '{}')
+		gameData.detectedClasses = Array.from(detectedShapes.value)
+		localStorage.setItem(`game_${user.phone}`, JSON.stringify(gameData))
+	}
 
-  // Assign a random grid position if not already assigned
-  if (!shapePositions.value.has(shapeName)) {
-    const availablePositions = gridCells.value
-      .map((cell, index) => ({ cell, index }))
-      .filter(({ cell }) => !cell.filled)
-      .map(({ index }) => index)
+	// Assign a random grid position if not already assigned
+	if (!shapePositions.value.has(shapeName)) {
+		const availablePositions = gridCells.value
+			.map((cell, index) => ({ cell, index }))
+			.filter(({ cell }) => !cell.filled)
+			.map(({ index }) => index)
 
-    if (availablePositions.length > 0) {
-      const randomPosition = availablePositions[Math.floor(Math.random() * availablePositions.length)]
-      shapePositions.value.set(shapeName, randomPosition)
+		if (availablePositions.length > 0) {
+			const randomPosition = availablePositions[Math.floor(Math.random() * availablePositions.length)]
+			shapePositions.value.set(shapeName, randomPosition)
 
-      // Fill the grid cell
-      gridCells.value[randomPosition].filled = true
-      gridCells.value[randomPosition].shape = getShapeEmoji(shapeName)
-      gridCells.value[randomPosition].overlayImage = getOverlayImage(randomPosition + 1)
-      gridCells.value[randomPosition].shapeName = shapeName
-      gridCells.value[randomPosition].active = true
+			// Fill the grid cell
+			gridCells.value[randomPosition].filled = true
+			gridCells.value[randomPosition].shape = getShapeEmoji(shapeName)
+			gridCells.value[randomPosition].overlayImage = getOverlayImage(randomPosition + 1)
+			gridCells.value[randomPosition].shapeName = shapeName
+			gridCells.value[randomPosition].active = true
 
-      setTimeout(() => {
-        gridCells.value[randomPosition].active = false
-      }, 1000)
+			// Remove active class after animation
+			setTimeout(() => {
+				gridCells.value[randomPosition].active = false
+			}, 1000)
 
-      await new Promise(resolve => setTimeout(resolve, 10))
-      await updateGameProgress(shapeName)
+			// Ensure grid state is fully updated before sending progress
+			await new Promise(resolve => setTimeout(resolve, 10))
 
-      // Complete after 6 found
-      if (detectedShapes.value.size >= 6) {
-        completionTime.value = Date.now() - startTime.value
-        await completeGame()
-      }
-    }
-  }
+			// Send progress update to server AFTER the grid is updated
+			await updateGameProgress(shapeName)
+
+			// Check if game is completed (found all 6 grid positions)
+			if (detectedShapes.value.size >= 6) {
+				completionTime.value = Date.now() - startTime.value
+				await completeGame()
+			}
+		}
+	}
 }
 
 const updateGameProgress = async (detectedClassName: string) => {
-  const userData = localStorage.getItem('scavhunt_user')
-  if (!userData) return
+	// Send progress update to server for each successful detection
+	const userData = localStorage.getItem('scavhunt_user')
+	if (userData) {
+		const user = JSON.parse(userData)
 
-  const user = JSON.parse(userData)
-  try {
-    const progressData = {
-      participant_id: participantId.value,
-      phone: user.phone,
-      name: user.name,
-      selectedClasses: selectedClasses.value,
-      detectedClasses: Array.from(detectedShapes.value),
-      latestDetection: detectedClassName,
-      currentProgress: detectedShapes.value.size,
-      gridProgress: gridCells.value.filter(cell => cell.filled).length,
-      gridState: gridCells.value.map((cell, index) => ({
-        position: index,
-        filled: cell.filled,
-        shapeName: cell.shapeName,
-        overlayImage: cell.overlayImage,
-        shape: cell.shape,
-      })),
-      totalRequired: 6,
-      completed: false,
-      timestamp: Date.now(),
-      startTime: startTime.value,
-    }
+		try {
+			const progressData = {
+				participant_id: participantId.value,
+				phone: user.phone,
+				name: user.name,
+				selectedClasses: selectedClasses.value,
+				detectedClasses: Array.from(detectedShapes.value),
+				latestDetection: detectedClassName,
+				currentProgress: detectedShapes.value.size,
+				gridProgress: gridCells.value.filter(cell => cell.filled).length,
+				gridState: gridCells.value.map((cell, index) => ({
+					position: index,
+					filled: cell.filled,
+					shapeName: cell.shapeName,
+					overlayImage: cell.overlayImage,
+					shape: cell.shape
+				})),
+				totalRequired: 6,
+				completed: false,
+				timestamp: Date.now(),
+				startTime: startTime.value
+			}
 
-    await fetch('https://malibanscav.dev.artslabcreatives.com/api/games', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(progressData),
-    })
-  } catch (error) {
-    console.error('Error sending progress update:', error)
-  }
+			console.log('Sending progress update for detection:', detectedClassName, progressData)
+			console.log('Grid state at time of sending:', progressData.gridState.filter(cell => cell.filled))
+
+			const response = await fetch('https://malibanscav.dev.artslabcreatives.com/api/games', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(progressData)
+			})
+
+			if (!response.ok) {
+				console.error('Failed to send progress update:', response.statusText)
+			} else {
+				console.log('Progress update sent successfully for:', detectedClassName)
+			}
+		} catch (error) {
+			console.error('Error sending progress update:', error)
+		}
+	}
 }
 
 const completeGame = async () => {
-  gameCompleted.value = true
+	gameCompleted.value = true
 
-  const userData = localStorage.getItem('scavhunt_user')
-  if (userData) {
-    const user = JSON.parse(userData)
-    const gameData = JSON.parse(localStorage.getItem(`game_${user.phone}`) || '{}')
-    gameData.completed = true
-    gameData.completionTime = completionTime.value
-    gameData.endTime = Date.now()
-    localStorage.setItem(`game_${user.phone}`, JSON.stringify(gameData))
+	// Update localStorage to mark as completed
+	const userData = localStorage.getItem('scavhunt_user')
+	if (userData) {
+		const user = JSON.parse(userData)
+		const gameData = JSON.parse(localStorage.getItem(`game_${user.phone}`) || '{}')
+		gameData.completed = true
+		gameData.completionTime = completionTime.value
+		gameData.endTime = Date.now()
+		localStorage.setItem(`game_${user.phone}`, JSON.stringify(gameData))
 
-    try {
-      const uploadData = {
-        participant_id: participantId.value,
-        phone: user.phone,
-        name: user.name,
-        selectedClasses: selectedClasses.value,
-        detectedClasses: Array.from(detectedShapes.value),
-        completionTime: completionTime.value,
-        startTime: startTime.value,
-        endTime: Date.now(),
-        gridProgress: gridCells.value.filter(cell => cell.filled).length,
-        gridState: gridCells.value.map((cell, index) => ({
-          position: index,
-          filled: cell.filled,
-          shapeName: cell.shapeName,
-          overlayImage: cell.overlayImage,
-          shape: cell.shape,
-        })),
-        totalGridCells: 6,
-        completed: true,
-        finalCompletion: true,
-      }
+		// Upload data to server
+		try {
+			const uploadData = {
+				participant_id: participantId.value,
+				phone: user.phone,
+				name: user.name,
+				selectedClasses: selectedClasses.value,
+				detectedClasses: Array.from(detectedShapes.value),
+				completionTime: completionTime.value,
+				startTime: startTime.value,
+				endTime: Date.now(),
+				gridProgress: gridCells.value.filter(cell => cell.filled).length,
+				gridState: gridCells.value.map((cell, index) => ({
+					position: index,
+					filled: cell.filled,
+					shapeName: cell.shapeName,
+					overlayImage: cell.overlayImage,
+					shape: cell.shape
+				})),
+				totalGridCells: 6,
+				completed: true,
+				finalCompletion: true // Flag to indicate this is the final completion
+			}
 
-      await fetch('https://malibanscav.dev.artslabcreatives.com/api/games', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(uploadData),
-      })
-    } catch (error) {
-      console.error('Error uploading game data:', error)
-    }
-  }
+			console.log('Uploading final game completion data with participant ID:', participantId.value, uploadData)
+
+			const response = await fetch('https://malibanscav.dev.artslabcreatives.com/api/games', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(uploadData)
+			})
+
+			if (!response.ok) {
+				console.error('Failed to upload game data:', response.statusText)
+			} else {
+				console.log('Game data uploaded successfully')
+			}
+		} catch (error) {
+			console.error('Error uploading game data:', error)
+		}
+	}
 }
 
-/* =========================
-   Utils
-   ========================= */
 const getShapeEmoji = (shapeName: string): string => {
-  const emojiMap: Record<string, string> = {
-    'circle': '⭕',
-    'square': '⬜',
-    'triangle': '🔺',
-    'star': '⭐',
-    'heart': '❤️',
-    'diamond': '💎',
-    'default': '🔷',
-  }
-  return emojiMap[shapeName.toLowerCase()] || emojiMap.default
+	const emojiMap: { [key: string]: string } = {
+		'circle': '⭕',
+		'square': '⬜',
+		'triangle': '🔺',
+		'star': '⭐',
+		'heart': '❤️',
+		'diamond': '💎',
+		'default': '🔷'
+	}
+
+	return emojiMap[shapeName.toLowerCase()] || emojiMap.default
 }
 
 const getOverlayImage = (cellNumber: number): string => {
-  const paddedNumber = cellNumber.toString().padStart(2, '0')
-  return `/images/overlay_${paddedNumber}.png`
+	const paddedNumber = cellNumber.toString().padStart(2, '0')
+	return `/images/overlay_${paddedNumber}.png`
 }
 
 const formatTime = (ms: number): string => {
-  const seconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = seconds % 60
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
-}
-
-/* =========================
-   Controls (used in template)
-   ========================= */
-const flipCamera = async () => {
-  try {
-    await hardStopWebcam()
-    // On non‑iOS, cycle devices; on iOS, toggling screen flip is how we swap cameras
-    if (!isIOS() && videoDevices.length > 1) {
-      currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length
-    } else {
-      isScreenFlipped.value = !isScreenFlipped.value
-    }
-    await initializeCamera()
-  } catch (err) {
-    console.error('Error flipping camera:', err)
-  }
-}
-
-const toggleScreenFlip = async () => {
-  isScreenFlipped.value = !isScreenFlipped.value
-  // Reinitialize so facingMode actually changes on iOS
-  await initializeCamera()
+	const seconds = Math.floor(ms / 1000)
+	const minutes = Math.floor(seconds / 60)
+	const remainingSeconds = seconds % 60
+	return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
 const resetGame = () => {
-  detectedShapes.value.clear()
-  detectionTracker.value.clear()
-  shapePositions.value.clear()
-  gridCells.value.forEach(cell => {
-    cell.filled = false
-    cell.active = false
-    cell.shape = ''
-    cell.overlayImage = ''
-    cell.shapeName = ''
-  })
-  gameCompleted.value = false
-  startTime.value = Date.now()
-  completionTime.value = 0
+	// This function is kept for development purposes but shouldn't be used in production
+	// since players should only play once
+	detectedShapes.value.clear()
+	detectionTracker.value.clear()
+	shapePositions.value.clear()
+	gridCells.value.forEach(cell => {
+		cell.filled = false
+		cell.active = false
+		cell.shape = ''
+		cell.overlayImage = ''
+		cell.shapeName = ''
+	})
+	gameCompleted.value = false
+	startTime.value = Date.now()
+	completionTime.value = 0
 
-  const userData = localStorage.getItem('scavhunt_user')
-  if (userData) {
-    const user = JSON.parse(userData)
-    localStorage.removeItem(`game_${user.phone}`)
-    initializeRandomClasses()
-  }
+	// Clear game data from localStorage (for development only)
+	const userData = localStorage.getItem('scavhunt_user')
+	if (userData) {
+		const user = JSON.parse(userData)
+		localStorage.removeItem(`game_${user.phone}`)
+		initializeRandomClasses()
+	}
 }
 
-const goHome = async () => {
-  if (rafId) cancelAnimationFrame(rafId)
-  await hardStopWebcam()
-  router.push('/')
+const goHome = () => {
+	if (webcam) {
+		webcam.stop()
+	}
+	router.push('/')
 }
 
-// Expose anything referenced in the template (if using <script setup>, refs are auto-exposed)
+// Camera control functions
+
+
+const flipCamera = async () => {
+	try {
+		if (webcam) {
+			webcam.stop()
+			if (webcam.canvas?.parentNode) {
+				webcam.canvas.parentNode.removeChild(webcam.canvas)
+			}
+		}
+
+		// Switch to next available camera
+		currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length
+		await initializeCamera()
+	} catch (err) {
+		console.error("Error flipping camera:", err)
+	}
+}
+
+const toggleScreenFlip = () => {
+	isScreenFlipped.value = !isScreenFlipped.value
+}
 </script>
-
 
 <style scoped>
 .camera-container {
@@ -890,7 +831,6 @@ const goHome = async () => {
 	align-items: center;
 	justify-content: center;
 	z-index: 20;
-	padding: 20px;
 }
 
 .modal-content {
@@ -900,8 +840,6 @@ const goHome = async () => {
 	text-align: center;
 	max-width: 400px;
 	width: 90%;
-	max-height: 80vh;
-	overflow-y: auto;
 }
 
 .win-image {
