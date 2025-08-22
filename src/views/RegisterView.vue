@@ -4,10 +4,10 @@
 			<MalibanLogo />
 			<h1>Registration</h1>
 			<ul style="color:black;">
-				<li>Download the given image.</li>
-				<li>Share it on your Facebook story and tag the official Maliban page.</li>
-				<li>Winners will be selected every hour through a raffle draw.</li>
-				<li>Each winner will receive a special Maliban gift hamper.</li>
+				<li  style="color:black;">Download the given image.</li>
+				<li  style="color:black;">Share it on your Facebook story and tag the official Maliban page.</li>
+				<li  style="color:black;">Winners will be selected every hour through a raffle draw.</li>
+				<li  style="color:black;">Each winner will receive a special Maliban gift hamper.</li>
 			</ul>
 			<form @submit.prevent="handleSubmit">
 				<div class="form-group">
