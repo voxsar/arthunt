@@ -348,30 +348,44 @@ const getCameras = async () => {
   currentDeviceIndex = backIndex >= 0 ? backIndex : 0
 }
 
-const buildConstraints = async (strict = true) => {
+const buildConstraints = async (strict = true): Promise<MediaStreamConstraints> => {
   const base: MediaTrackConstraints = {
     width: { ideal: 640 },
     height: { ideal: 480 },
   }
 
-  // iOS prefers facingMode, Android is happiest with deviceId:exact (once we know it)
   if (isIOS()) {
-    const facingExact = strict ? { exact: desiredFacing.value } : desiredFacing.value
-    return { video: { ...base, facingMode: facingExact as any } }
+    // iOS prefers facingMode
+    const facingExact = strict ? ({ exact: desiredFacing.value } as const) : desiredFacing.value
+    const video: MediaTrackConstraints = {
+      ...base,
+      // TS may not like the union here; cast to the known type.
+      // facingMode can be ConstrainDOMString, so:
+      facingMode: facingExact as unknown as ConstrainDOMString,
+    }
+    return { video }
   }
 
-  // ANDROID / OTHERS: try to resolve deviceId for this facing
+  // ANDROID/OTHERS: resolve deviceId for the current facing if possible
   const id = await resolveDeviceIdForFacing(desiredFacing.value)
 
   if (id) {
-    // Open this exact device to force the correct lens
-    return { video: { ...base, deviceId: { exact: id } as any } }
+    const video: MediaTrackConstraints = {
+      ...base,
+      deviceId: { exact: id }, // force the correct lens
+    }
+    return { video }
   }
 
   // Fallback to facingMode if we couldn't resolve an id
-  const facingExact = strict ? { exact: desiredFacing.value } : desiredFacing.value
-  return { video: { ...base, facingMode: facingExact as any } }
+  const facingExact = strict ? ({ exact: desiredFacing.value } as const) : desiredFacing.value
+  const video: MediaTrackConstraints = {
+    ...base,
+    facingMode: facingExact as unknown as ConstrainDOMString,
+  }
+  return { video }
 }
+
 
 
 /* =========================
@@ -430,42 +444,7 @@ const initializeCamera = async () => {
   }
 }
 
-// ADD this verifier helper:
-const verifyFacingAndRetry = async () => {
-  try {
-    const track = (webcam as any)?.webcam?.srcObject?.getVideoTracks?.()[0] as MediaStreamTrack | undefined
-    const reported = track?.getSettings?.().facingMode // e.g. 'environment' | 'user' | undefined
-    if (!reported) return
 
-    // If it didn't switch, try one strict retry with exact facing and (if present) exact deviceId
-    if (reported !== desiredFacing.value) {
-      await hardStopWebcam()
-
-      // strict=true uses facingMode: { exact: ... }
-      const strictConstraints = buildConstraints(true)
-      webcam = new tmImage.Webcam(640, 480, false)
-      await webcam.setup(strictConstraints)
-      await webcam.play()
-
-      const vid = (webcam as any)?.webcam as HTMLVideoElement | undefined
-      if (vid) {
-        vid.setAttribute('playsinline', 'true')
-        vid.setAttribute('muted', 'true')
-        try { await vid.play() } catch {}
-      }
-
-      if (webcamContainer.value) {
-        webcamContainer.value.innerHTML = ''
-        webcamContainer.value.appendChild(webcam.canvas)
-        webcam.canvas.style.width = '100%'
-        webcam.canvas.style.height = '100%'
-        webcam.canvas.style.objectFit = 'cover'
-      }
-    }
-  } catch (e) {
-    console.warn('verifyFacingAndRetry failed:', e)
-  }
-}
 
 
 const onVisibilityChange = async () => {
