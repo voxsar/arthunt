@@ -159,6 +159,23 @@ const gridCells = ref(
 
 const shapePositions = ref(new Map<string, number>())
 
+const desiredFacing = ref<'environment' | 'user'>('environment')
+
+// OPTIONAL: helper, some Androids report "rear"/"back" vs "environment"
+const isAndroid = () => /Android/i.test(navigator.userAgent)
+
+// Map labels to a likely device for a facing
+const pickDeviceIdForFacing = (facing: 'environment' | 'user'): string | null => {
+  if (!videoDevices?.length) return null
+  const want = facing === 'environment'
+    ? ['back', 'rear', 'environment', 'world']
+    : ['front', 'user', 'selfie', 'face']
+  const dev = videoDevices.find(d => want.some(w =>
+    (d.label || '').toLowerCase().includes(w)
+  ))
+  return dev?.deviceId || null
+}
+
 const MODEL_URL = '/my_model/'
 
 // Valid and neutral classes
@@ -280,36 +297,34 @@ const getCameras = async () => {
   currentDeviceIndex = backIndex >= 0 ? backIndex : 0
 }
 
-const buildConstraints = () => {
+// REPLACE your buildConstraints() with this:
+const buildConstraints = (strict = false) => {
   const base: MediaTrackConstraints = {
     width: { ideal: 640 },
     height: { ideal: 480 },
   }
 
-  const mode = isScreenFlipped.value ? 'user' : 'environment'
+  const facingExact = strict ? { exact: desiredFacing.value } : desiredFacing.value
+  const deviceId = pickDeviceIdForFacing(desiredFacing.value)
 
-  if (isIOS()) {
-    // iOS: rely on facingMode; deviceId is fragile there
-    return { video: { ...base, facingMode: mode } }
-  }
-
-  // Non-iOS: prefer deviceId if available, but not strict "exact"
-  const deviceId = videoDevices[currentDeviceIndex]?.deviceId
+  // Always ask for facingMode first. Add deviceId as a *hint* if we have one.
+  // On some Androids, only facingMode flips; on others, deviceId helps.
   const video: MediaTrackConstraints = deviceId
-    ? { ...base, deviceId: { ideal: deviceId }, facingMode: mode }
-    : { ...base, facingMode: mode }
+    ? { ...base, facingMode: facingExact as any, deviceId: { ideal: deviceId } }
+    : { ...base, facingMode: facingExact as any }
 
   return { video }
 }
 
+
 /* =========================
    Init / Loop
    ========================= */
+// UPDATE your initializeCamera() to call a verifier after play:
 const initializeCamera = async () => {
   if (isInitializing) return
   isInitializing = true
   try {
-    // Load model once
     if (!model) {
       const modelURL = MODEL_URL + 'model.json'
       const metadataURL = MODEL_URL + 'metadata.json'
@@ -317,20 +332,17 @@ const initializeCamera = async () => {
       isModelLoaded.value = true
     }
 
-    // Ensure any old streams are fully stopped
     await hardStopWebcam()
 
-    if (webcamContainer.value) {
-      webcamContainer.value.innerHTML = ''
-    }
+    if (webcamContainer.value) webcamContainer.value.innerHTML = ''
 
-    const constraints = buildConstraints()
+    // 1st attempt: normal constraints
+    let constraints = buildConstraints(false)
 
     webcam = new tmImage.Webcam(640, 480, false)
     await webcam.setup(constraints)
     await webcam.play()
 
-    // Ensure inline/muted video on iOS for autoplay
     const vid = (webcam as any)?.webcam as HTMLVideoElement | undefined
     if (vid) {
       vid.setAttribute('playsinline', 'true')
@@ -344,6 +356,9 @@ const initializeCamera = async () => {
       webcam.canvas.style.height = '100%'
       webcam.canvas.style.objectFit = 'cover'
     }
+
+    // If the browser gave us the wrong facing, retry once with strict constraints
+    await verifyFacingAndRetry()
 
     if (rafId) cancelAnimationFrame(rafId)
     const tick = async () => {
@@ -361,6 +376,43 @@ const initializeCamera = async () => {
     isInitializing = false
   }
 }
+// ADD this verifier helper:
+const verifyFacingAndRetry = async () => {
+  try {
+    const track = (webcam as any)?.webcam?.srcObject?.getVideoTracks?.()[0] as MediaStreamTrack | undefined
+    const reported = track?.getSettings?.().facingMode // e.g. 'environment' | 'user' | undefined
+    if (!reported) return
+
+    // If it didn't switch, try one strict retry with exact facing and (if present) exact deviceId
+    if (reported !== desiredFacing.value) {
+      await hardStopWebcam()
+
+      // strict=true uses facingMode: { exact: ... }
+      const strictConstraints = buildConstraints(true)
+      webcam = new tmImage.Webcam(640, 480, false)
+      await webcam.setup(strictConstraints)
+      await webcam.play()
+
+      const vid = (webcam as any)?.webcam as HTMLVideoElement | undefined
+      if (vid) {
+        vid.setAttribute('playsinline', 'true')
+        vid.setAttribute('muted', 'true')
+        try { await vid.play() } catch {}
+      }
+
+      if (webcamContainer.value) {
+        webcamContainer.value.innerHTML = ''
+        webcamContainer.value.appendChild(webcam.canvas)
+        webcam.canvas.style.width = '100%'
+        webcam.canvas.style.height = '100%'
+        webcam.canvas.style.objectFit = 'cover'
+      }
+    }
+  } catch (e) {
+    console.warn('verifyFacingAndRetry failed:', e)
+  }
+}
+
 
 const onVisibilityChange = async () => {
   if (document.visibilityState === 'hidden') {
@@ -597,15 +649,16 @@ const formatTime = (ms: number): string => {
 /* =========================
    Controls (used in template)
    ========================= */
+// REPLACE flipCamera() with this (works on Android & iOS):
 const flipCamera = async () => {
   try {
+    // Toggle desired camera
+    desiredFacing.value = desiredFacing.value === 'environment' ? 'user' : 'environment'
+
+    // Visual mirror only when front camera (nice UX)
+    isScreenFlipped.value = desiredFacing.value === 'environment'
+
     await hardStopWebcam()
-    // On non‑iOS, cycle devices; on iOS, toggling screen flip is how we swap cameras
-    if (!isIOS() && videoDevices.length > 1) {
-      currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length
-    } else {
-      isScreenFlipped.value = !isScreenFlipped.value
-    }
     await initializeCamera()
   } catch (err) {
     console.error('Error flipping camera:', err)
@@ -899,6 +952,8 @@ const goHome = async () => {
 	text-align: center;
 	max-width: 400px;
 	width: 90%;
+	max-height: 80vh;
+	overflow-y: auto;
 }
 
 .win-image {
