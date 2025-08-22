@@ -53,8 +53,6 @@
 			<!-- Detection feedback -->
 			<div class="detection-info">
 				<div v-if="currentDetection" class="current-detection">
-					<span class="detection-label">{{ currentDetection.className }}</span>
-					<span class="confidence">{{ (currentDetection.probability * 100).toFixed(1) }}%</span>
 					<div v-if="selectedClasses.includes(currentDetection.className) && detectionTracker.has(currentDetection.className)"
 						class="detection-progress">
 						<div class="progress-bar">
@@ -62,7 +60,7 @@
 								:style="{ width: `${((detectionTracker.get(currentDetection.className)?.count || 0) / DETECTION_THRESHOLD) * 100}%` }">
 							</div>
 						</div>
-						<span class="progress-text">Don't shake the phone during scanning</span>
+						<span class="progress-text">Hold steady</span>
 					</div>
 				</div>
 			</div>
