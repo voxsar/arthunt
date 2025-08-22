@@ -159,8 +159,6 @@ const gridCells = ref(
 
 const shapePositions = ref(new Map<string, number>())
 
-const desiredFacing = ref<'environment' | 'user'>('environment')
-
 // OPTIONAL: helper, some Androids report "rear"/"back" vs "environment"
 const isAndroid = () => /Android/i.test(navigator.userAgent)
 
@@ -241,6 +239,17 @@ onMounted(async () => {
   try { await navigator.mediaDevices.getUserMedia({ video: true }); } catch {}
 
   await getCameras()
+
+
+  // Default to back cam
+  desiredFacing.value = 'environment'
+
+  // OPTIONAL but helpful: pre-resolve both ids so flips are instant & correct
+  await Promise.all([
+    resolveDeviceIdForFacing('environment'),
+    resolveDeviceIdForFacing('user'),
+  ])
+
   await initializeCamera()
 
   document.addEventListener('visibilitychange', onVisibilityChange)
@@ -251,39 +260,56 @@ onUnmounted(async () => {
   if (rafId) cancelAnimationFrame(rafId)
   await hardStopWebcam()
 })
+const desiredFacing = ref<'environment' | 'user'>('environment')
 
+// Cache resolved deviceIds per facing after we successfully probe them
+const resolvedIds: Record<'environment' | 'user', string | null> = {
+  environment: null,
+  user: null,
+}
 /* =========================
    Platform helpers
    ========================= */
+// Small util
 const isIOS = () =>
   /iPad|iPhone|iPod/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1)
 
-/* =========================
-   Camera helpers
-   ========================= */
-const hardStopWebcam = async () => {
+/**
+ * Probe the camera for a specific facing with facingMode:{exact},
+ * extract the actual deviceId from the track, stop the probe stream,
+ * cache and return it.
+ */
+const resolveDeviceIdForFacing = async (facing: 'environment' | 'user'): Promise<string | null> => {
+  // If we already resolved it, reuse
+  if (resolvedIds[facing]) return resolvedIds[facing]
+
   try {
-    if (webcam) {
-      try { await webcam.stop() } catch {}
-      const vid = (webcam as any)?.webcam as HTMLVideoElement | undefined
-      const stream: MediaStream | undefined = vid?.srcObject as any
-      if (stream) {
-        stream.getTracks().forEach(t => {
-          try { t.stop() } catch {}
-        })
-        // Clear srcObject to fully release on Safari
-        if (vid) {
-          vid.srcObject = null
-          // @ts-ignore
-          vid.removeAttribute('srcObject')
-        }
-      }
-      try {
-        webcam.canvas?.parentNode?.removeChild(webcam.canvas)
-      } catch {}
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { exact: facing } as any }
+    })
+    const track = stream.getVideoTracks()[0]
+    const id = (track.getSettings && track.getSettings().deviceId) || null
+    // Stop probe stream immediately
+    track.stop()
+    if (id) resolvedIds[facing] = id
+    return id
+  } catch {
+    // Some Androids reject exact; fall back to heuristic resolution
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices()
+      const vids = all.filter(d => d.kind === 'videoinput')
+      // Heuristic by label
+      const want = facing === 'environment'
+        ? ['back', 'rear', 'environment', 'world']
+        : ['front', 'user', 'selfie', 'face']
+      const match = vids.find(v => want.some(w => (v.label || '').toLowerCase().includes(w)))
+      resolvedIds[facing] = match?.deviceId || null
+      return resolvedIds[facing]
+    } catch {
+      return null
     }
-  } catch {}
+  }
 }
 
 const getCameras = async () => {
@@ -297,23 +323,29 @@ const getCameras = async () => {
   currentDeviceIndex = backIndex >= 0 ? backIndex : 0
 }
 
-// REPLACE your buildConstraints() with this:
-const buildConstraints = (strict = false) => {
+const buildConstraints = async (strict = true) => {
   const base: MediaTrackConstraints = {
     width: { ideal: 640 },
     height: { ideal: 480 },
   }
 
+  // iOS prefers facingMode, Android is happiest with deviceId:exact (once we know it)
+  if (isIOS()) {
+    const facingExact = strict ? { exact: desiredFacing.value } : desiredFacing.value
+    return { video: { ...base, facingMode: facingExact as any } }
+  }
+
+  // ANDROID / OTHERS: try to resolve deviceId for this facing
+  const id = await resolveDeviceIdForFacing(desiredFacing.value)
+
+  if (id) {
+    // Open this exact device to force the correct lens
+    return { video: { ...base, deviceId: { exact: id } as any } }
+  }
+
+  // Fallback to facingMode if we couldn't resolve an id
   const facingExact = strict ? { exact: desiredFacing.value } : desiredFacing.value
-  const deviceId = pickDeviceIdForFacing(desiredFacing.value)
-
-  // Always ask for facingMode first. Add deviceId as a *hint* if we have one.
-  // On some Androids, only facingMode flips; on others, deviceId helps.
-  const video: MediaTrackConstraints = deviceId
-    ? { ...base, facingMode: facingExact as any, deviceId: { ideal: deviceId } }
-    : { ...base, facingMode: facingExact as any }
-
-  return { video }
+  return { video: { ...base, facingMode: facingExact as any } }
 }
 
 
@@ -333,11 +365,10 @@ const initializeCamera = async () => {
     }
 
     await hardStopWebcam()
-
     if (webcamContainer.value) webcamContainer.value.innerHTML = ''
 
-    // 1st attempt: normal constraints
-    let constraints = buildConstraints(false)
+    // IMPORTANT: await constraints (we resolve deviceIds here)
+    const constraints = await buildConstraints(true)
 
     webcam = new tmImage.Webcam(640, 480, false)
     await webcam.setup(constraints)
@@ -357,9 +388,6 @@ const initializeCamera = async () => {
       webcam.canvas.style.objectFit = 'cover'
     }
 
-    // If the browser gave us the wrong facing, retry once with strict constraints
-    await verifyFacingAndRetry()
-
     if (rafId) cancelAnimationFrame(rafId)
     const tick = async () => {
       if (!gameCompleted.value && webcam && model) {
@@ -376,6 +404,7 @@ const initializeCamera = async () => {
     isInitializing = false
   }
 }
+
 // ADD this verifier helper:
 const verifyFacingAndRetry = async () => {
   try {
@@ -654,9 +683,8 @@ const flipCamera = async () => {
   try {
     // Toggle desired camera
     desiredFacing.value = desiredFacing.value === 'environment' ? 'user' : 'environment'
-
-    // Visual mirror only when front camera (nice UX)
-    isScreenFlipped.value = desiredFacing.value === 'environment'
+    // Mirror visually only when using front camera
+    isScreenFlipped.value = desiredFacing.value === 'user'
 
     await hardStopWebcam()
     await initializeCamera()
